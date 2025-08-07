@@ -1,0 +1,348 @@
+absl-py @ file:///C:/ci/absl-py_1624299085608/work
+# Editable install with no version control (action-tutorials-py==0.9.4)
+-e /root/ros2_foxy/build/action_tutorials_py
+aiosignal==1.3.1
+# Editable install with no version control (ament-clang-format==0.9.8)
+-e /root/ros2_foxy/build/ament_clang_format
+# Editable install with no version control (ament-clang-tidy==0.9.8)
+-e /root/ros2_foxy/build/ament_clang_tidy
+# Editable install with no version control (ament-copyright==0.9.8)
+-e /root/ros2_foxy/build/ament_copyright
+# Editable install with no version control (ament-cppcheck==0.9.8)
+-e /root/ros2_foxy/build/ament_cppcheck
+# Editable install with no version control (ament-cpplint==0.9.8)
+-e /root/ros2_foxy/build/ament_cpplint
+# Editable install with no version control (ament-flake8==0.9.8)
+-e /root/ros2_foxy/build/ament_flake8
+# Editable install with no version control (ament-index-python==1.1.0)
+-e /root/ros2_foxy/build/ament_index_python
+# Editable install with no version control (ament-lint==0.9.8)
+-e /root/ros2_foxy/build/ament_lint
+# Editable install with no version control (ament-lint-cmake==0.9.8)
+-e /root/ros2_foxy/build/ament_lint_cmake
+# Editable install with no version control (ament-mypy==0.9.8)
+-e /root/ros2_foxy/build/ament_mypy
+# Editable install with no version control (ament-package==0.9.5)
+-e /root/ros2_foxy/build/ament_package
+# Editable install with no version control (ament-pclint==0.9.8)
+-e /root/ros2_foxy/build/ament_pclint
+# Editable install with no version control (ament-pep257==0.9.8)
+-e /root/ros2_foxy/build/ament_pep257
+# Editable install with no version control (ament-pycodestyle==0.9.8)
+-e /root/ros2_foxy/build/ament_pycodestyle
+# Editable install with no version control (ament-pyflakes==0.9.8)
+-e /root/ros2_foxy/build/ament_pyflakes
+# Editable install with no version control (ament-uncrustify==0.9.8)
+-e /root/ros2_foxy/build/ament_uncrustify
+# Editable install with no version control (ament-xmllint==0.9.8)
+-e /root/ros2_foxy/build/ament_xmllint
+antlr4-python3-runtime==4.8
+anyio @ file:///tmp/build/80754af9/anyio_1644481698350/work/dist
+argon2-cffi @ file:///opt/conda/conda-bld/argon2-cffi_1645000214183/work
+argon2-cffi-bindings @ file:///tmp/build/80754af9/argon2-cffi-bindings_1644569684262/work
+asttokens @ file:///opt/conda/conda-bld/asttokens_1646925590279/work
+attrs @ file:///croot/attrs_1729089401488/work
+Babel @ file:///croot/babel_1671781930836/work
+backcall @ file:///home/ktietz/src/ci/backcall_1611930011877/work
+beautifulsoup4 @ file:///croot/beautifulsoup4-split_1718029820055/work
+bleach @ file:///opt/conda/conda-bld/bleach_1641577558959/work
+BlurGenerator==1.1.0
+Brotli @ file:///croot/brotli-split_1714483155106/work
+cachetools==5.5.0
+certifi @ file:///croot/certifi_1725551672989/work/certifi
+cffi @ file:///croot/cffi_1726856441404/work
+charset-normalizer @ file:///croot/charset-normalizer_1721748349566/work
+click @ file:///croot/click_1698129812380/work
+cloudpickle @ file:///croot/cloudpickle_1721657346512/work
+comm @ file:///croot/comm_1709322850197/work
+contourpy @ file:///opt/conda/conda-bld/contourpy_1663827406301/work
+cycler @ file:///tmp/build/80754af9/cycler_1637851556182/work
+cytoolz @ file:///croot/cytoolz_1701723583781/work
+dask @ file:///croot/dask-core_1683065217061/work
+debugpy @ file:///croot/debugpy_1690905042057/work
+decorator @ file:///opt/conda/conda-bld/decorator_1643638310831/work
+defusedxml @ file:///tmp/build/80754af9/defusedxml_1615228127516/work
+# Editable install with no version control (demo-nodes-py==0.9.4)
+-e /root/ros2_foxy/build/demo_nodes_py
+distlib==0.3.9
+dm-tree==0.1.8
+# Editable install with no version control (domain-coordinator==0.9.2)
+-e /root/ros2_foxy/build/domain_coordinator
+# Editable install with no version control (examples-rclpy-executors==0.9.4)
+-e /root/ros2_foxy/build/examples_rclpy_executors
+# Editable install with no version control (examples-rclpy-minimal-action-client==0.9.4)
+-e /root/ros2_foxy/build/examples_rclpy_minimal_action_client
+# Editable install with no version control (examples-rclpy-minimal-action-server==0.9.4)
+-e /root/ros2_foxy/build/examples_rclpy_minimal_action_server
+# Editable install with no version control (examples-rclpy-minimal-client==0.9.4)
+-e /root/ros2_foxy/build/examples_rclpy_minimal_client
+# Editable install with no version control (examples-rclpy-minimal-publisher==0.9.4)
+-e /root/ros2_foxy/build/examples_rclpy_minimal_publisher
+# Editable install with no version control (examples-rclpy-minimal-service==0.9.4)
+-e /root/ros2_foxy/build/examples_rclpy_minimal_service
+# Editable install with no version control (examples-rclpy-minimal-subscriber==0.9.4)
+-e /root/ros2_foxy/build/examples_rclpy_minimal_subscriber
+# Editable install with no version control (examples-tf2-py==0.13.14)
+-e /root/ros2_foxy/build/examples_tf2_py
+executing @ file:///opt/conda/conda-bld/executing_1646925071911/work
+Farama-Notifications==0.0.4
+fastjsonschema @ file:///opt/conda/conda-bld/python-fastjsonschema_1661371079312/work
+filelock @ file:///croot/filelock_1700591183607/work
+fonttools @ file:///croot/fonttools_1713551344105/work
+frozenlist==1.5.0
+fsspec @ file:///croot/fsspec_1724855583730/work
+gmpy2 @ file:///tmp/build/80754af9/gmpy2_1645455532332/work
+google-auth==2.37.0
+google-auth-oauthlib==1.0.0
+grpcio==1.68.1
+gym==0.23.1
+gym-notices==0.0.8
+gymnasium==1.0.0
+hydra-core==1.1.0
+hydra-submitit-launcher==1.1.5
+idna @ file:///croot/idna_1714398848350/work
+imagecodecs @ file:///croot/imagecodecs_1677576717595/work
+imageio==2.9.0
+imageio-ffmpeg==0.4.4
+importlib-metadata @ file:///croot/importlib_metadata-suite_1704813515092/work
+importlib-resources @ file:///croot/importlib_resources-suite_1720641103994/work
+ipdb==0.13.9
+ipykernel @ file:///croot/ipykernel_1728665589812/work
+ipython @ file:///croot/ipython_1691532092695/work
+ipython-genutils @ file:///tmp/build/80754af9/ipython_genutils_1606773439826/work
+jedi @ file:///croot/jedi_1721058342488/work
+jinja2 @ file:///croot/jinja2_1716993405101/work
+joblib==1.4.2
+json5 @ file:///tmp/build/80754af9/json5_1624432770122/work
+jsonschema @ file:///croot/jsonschema_1728486696720/work
+jsonschema-specifications @ file:///croot/jsonschema-specifications_1699032386549/work
+jupyter-client @ file:///croot/jupyter_client_1699455897726/work
+jupyter-core @ file:///croot/jupyter_core_1718818295206/work
+jupyter-packaging @ file:///tmp/build/80754af9/jupyter-packaging_1613502826984/work
+jupyter-server @ file:///croot/jupyter_server_1671707632269/work
+jupyterlab @ file:///tmp/build/80754af9/jupyterlab_1619133235951/work
+jupyterlab-pygments @ file:///tmp/build/80754af9/jupyterlab_pygments_1601490720602/work
+jupyterlab-server @ file:///croot/jupyterlab_server_1725865349919/work
+kiwisolver @ file:///croot/kiwisolver_1672387140495/work
+laser-geometry==2.2.0
+# Editable install with no version control (launch==0.10.10)
+-e /root/ros2_foxy/build/launch
+# Editable install with no version control (launch-ros==0.11.7)
+-e /root/ros2_foxy/build/launch_ros
+# Editable install with no version control (launch-testing==0.10.10)
+-e /root/ros2_foxy/build/launch_testing
+# Editable install with no version control (launch-testing-ros==0.11.7)
+-e /root/ros2_foxy/build/launch_testing_ros
+# Editable install with no version control (launch-xml==0.10.10)
+-e /root/ros2_foxy/build/launch_xml
+# Editable install with no version control (launch-yaml==0.10.10)
+-e /root/ros2_foxy/build/launch_yaml
+locket @ file:///opt/conda/conda-bld/locket_1652903118915/work
+lz4==4.3.3
+Markdown==3.7
+markdown-it-py==3.0.0
+MarkupSafe @ file:///croot/markupsafe_1704205993651/work
+matplotlib==3.4.2
+matplotlib-inline @ file:///opt/conda/conda-bld/matplotlib-inline_1662014470464/work
+mdurl==0.1.2
+message-filters==3.2.7
+mistune @ file:///opt/conda/conda-bld/mistune_1661496219659/work
+mkl-fft==1.3.1
+mkl-random @ file:///tmp/build/80754af9/mkl_random_1626186064646/work
+mkl-service==2.4.0
+mpi4py @ file:///croot/mpi4py_1671223370575/work
+mpmath @ file:///croot/mpmath_1690848262763/work
+msgpack==1.1.0
+nbclassic @ file:///croot/nbclassic_1681756170010/work
+nbclient @ file:///croot/nbclient_1698934205032/work
+nbconvert @ file:///croot/nbconvert_1728049414448/work
+nbformat @ file:///croot/nbformat_1728049424075/work
+nest-asyncio @ file:///croot/nest-asyncio_1708532673751/work
+networkx @ file:///croot/networkx_1690561992265/work
+notebook-shim @ file:///croot/notebook-shim_1699455894279/work
+numpy==1.24.4
+nvidia-cublas-cu12==12.4.2.65
+nvidia-cuda-cupti-cu12==12.4.99
+nvidia-cuda-nvrtc-cu12==12.4.99
+nvidia-cuda-runtime-cu12==12.4.99
+nvidia-cudnn-cu12==9.1.0.70
+nvidia-cufft-cu12==11.2.0.44
+nvidia-curand-cu12==10.3.5.119
+nvidia-cusolver-cu12==11.6.0.99
+nvidia-cusparse-cu12==12.3.0.142
+nvidia-nccl-cu12==2.20.5
+nvidia-nvjitlink-cu12==12.4.99
+nvidia-nvtx-cu12==12.4.99
+oauthlib==3.2.2
+omegaconf==2.1.2
+opencv-python==4.5.3.56
+# Editable install with no version control (osrf-pycommon==0.1.11)
+-e /root/ros2_foxy/build/osrf_pycommon
+packaging @ file:///croot/packaging_1720101850331/work
+pandas==1.3.0
+pandocfilters @ file:///opt/conda/conda-bld/pandocfilters_1643405455980/work
+parso @ file:///opt/conda/conda-bld/parso_1641458642106/work
+partd @ file:///croot/partd_1698702562572/work
+pexpect @ file:///tmp/build/80754af9/pexpect_1605563209008/work
+pickleshare @ file:///tmp/build/80754af9/pickleshare_1606932040724/work
+pillow @ file:///croot/pillow_1721059439630/work
+pkgutil-resolve-name @ file:///croot/pkgutil-resolve-name_1704297459416/work
+platformdirs @ file:///croot/platformdirs_1692205439124/work
+prometheus-client @ file:///tmp/abs_d3zeliano1/croots/recipe/prometheus_client_1659455100375/work
+prompt-toolkit @ file:///croot/prompt-toolkit_1704404351921/work
+protobuf==5.29.2
+psutil @ file:///opt/conda/conda-bld/psutil_1656431268089/work
+ptyprocess @ file:///tmp/build/80754af9/ptyprocess_1609355006118/work/dist/ptyprocess-0.7.0-py2.py3-none-any.whl
+pure-eval @ file:///opt/conda/conda-bld/pure_eval_1646925070566/work
+pyasn1==0.6.1
+pyasn1-modules==0.4.1
+pybullet==3.2.6
+pycparser @ file:///tmp/build/80754af9/pycparser_1636541352034/work
+Pygments @ file:///croot/pygments_1684279966437/work
+pyparsing @ file:///home/linux1/recipes/ci/pyparsing_1610983426697/work
+PySocks @ file:///tmp/build/80754af9/pysocks_1605305779399/work
+python-dateutil @ file:///croot/python-dateutil_1716495738603/work
+pytz @ file:///croot/pytz_1713974312559/work
+PyWavelets @ file:///croot/pywavelets_1670425177960/work
+PyYAML @ file:///croot/pyyaml_1728657952215/work
+pyzmq @ file:///croot/pyzmq_1705605076900/work
+qt-dotgraph==1.1.3
+qt-gui-cpp==1.1.3
+qt-gui-py-common==1.1.3
+# Editable install with no version control (quality-of-service-demo-py==0.9.4)
+-e /root/ros2_foxy/build/quality_of_service_demo_py
+ray==2.2.0
+referencing @ file:///croot/referencing_1699012038513/work
+requests @ file:///croot/requests_1721410876868/work
+requests-oauthlib==2.0.0
+resource-retriever==2.3.4
+rich==13.9.4
+ros2-graph==0.0.5
+# Editable install with no version control (ros2action==0.9.13)
+-e /root/ros2_foxy/build/ros2action
+# Editable install with no version control (ros2bag==0.3.11)
+-e /root/ros2_foxy/build/ros2bag
+# Editable install with no version control (ros2cli==0.9.13)
+-e /root/ros2_foxy/build/ros2cli
+# Editable install with no version control (ros2component==0.9.13)
+-e /root/ros2_foxy/build/ros2component
+# Editable install with no version control (ros2doctor==0.9.13)
+-e /root/ros2_foxy/build/ros2doctor
+# Editable install with no version control (ros2interface==0.9.13)
+-e /root/ros2_foxy/build/ros2interface
+# Editable install with no version control (ros2launch==0.11.7)
+-e /root/ros2_foxy/build/ros2launch
+# Editable install with no version control (ros2lifecycle==0.9.13)
+-e /root/ros2_foxy/build/ros2lifecycle
+# Editable install with no version control (ros2multicast==0.9.13)
+-e /root/ros2_foxy/build/ros2multicast
+# Editable install with no version control (ros2node==0.9.13)
+-e /root/ros2_foxy/build/ros2node
+# Editable install with no version control (ros2param==0.9.13)
+-e /root/ros2_foxy/build/ros2param
+# Editable install with no version control (ros2pkg==0.9.13)
+-e /root/ros2_foxy/build/ros2pkg
+# Editable install with no version control (ros2run==0.9.13)
+-e /root/ros2_foxy/build/ros2run
+# Editable install with no version control (ros2service==0.9.13)
+-e /root/ros2_foxy/build/ros2service
+# Editable install with no version control (ros2test==0.2.1)
+-e /root/ros2_foxy/build/ros2test
+# Editable install with no version control (ros2topic==0.9.13)
+-e /root/ros2_foxy/build/ros2topic
+# Editable install with no version control (ros2trace==1.0.6)
+-e /root/ros2_foxy/build/ros2trace
+# Editable install with no version control (rosidl-runtime-py==0.9.1)
+-e /root/ros2_foxy/build/rosidl_runtime_py
+rpds-py @ file:///croot/rpds-py_1698945930462/work
+# Editable install with no version control (rpyutils==0.2.0)
+-e /root/ros2_foxy/build/rpyutils
+# Editable install with no version control (rqt==1.1.2)
+-e /root/ros2_foxy/build/rqt
+# Editable install with no version control (rqt-action==1.0.2)
+-e /root/ros2_foxy/build/rqt_action/src
+# Editable install with no version control (rqt-console==1.1.2)
+-e /root/ros2_foxy/build/rqt_console/src
+# Editable install with no version control (rqt-graph==1.1.3)
+-e /root/ros2_foxy/build/rqt_graph/src
+# Editable install with no version control (rqt-gui==1.1.2)
+-e /root/ros2_foxy/build/rqt_gui/src
+# Editable install with no version control (rqt-gui-py==1.1.2)
+-e /root/ros2_foxy/build/rqt_gui_py/src
+# Editable install with no version control (rqt-msg==1.1.1)
+-e /root/ros2_foxy/build/rqt_msg/src
+# Editable install with no version control (rqt-plot==1.1.1)
+-e /root/ros2_foxy/build/rqt_plot/src
+# Editable install with no version control (rqt-publisher==1.3.0)
+-e /root/ros2_foxy/build/rqt_publisher/src
+# Editable install with no version control (rqt-py-console==1.0.2)
+-e /root/ros2_foxy/build/rqt_py_console/src
+# Editable install with no version control (rqt-reconfigure==1.0.8)
+-e /root/ros2_foxy/build/rqt_reconfigure/src
+# Editable install with no version control (rqt-service-caller==1.0.5)
+-e /root/ros2_foxy/build/rqt_service_caller/src
+# Editable install with no version control (rqt-shell==1.0.2)
+-e /root/ros2_foxy/build/rqt_shell/src
+# Editable install with no version control (rqt-srv==1.0.3)
+-e /root/ros2_foxy/build/rqt_srv/src
+# Editable install with no version control (rqt-top==1.0.2)
+-e /root/ros2_foxy/build/rqt_top/src
+# Editable install with no version control (rqt-topic==1.3.0)
+-e /root/ros2_foxy/build/rqt_topic/src
+rsa==4.9
+scikit-image==0.18.1
+scikit-learn==1.3.2
+scipy==1.9.3
+Send2Trash @ file:///croot/send2trash_1699371139552/work
+# Editable install with no version control (sensor-msgs-py==2.0.5)
+-e /root/ros2_foxy/build/sensor_msgs_py
+shellingham==1.5.4
+six @ file:///tmp/build/80754af9/six_1644875935023/work
+sklearn==0.0
+sniffio @ file:///croot/sniffio_1705431295498/work
+soupsieve @ file:///croot/soupsieve_1696347547217/work
+# Editable install with no version control (sros2==0.9.5)
+-e /root/ros2_foxy/build/sros2
+stable-baselines3==2.4.0
+stack-data @ file:///opt/conda/conda-bld/stack_data_1646927590127/work
+submitit==1.5.2
+sympy @ file:///croot/sympy_1734622612703/work
+tabulate==0.9.0
+tb-nightly==2.14.0a20230808
+tensorboard-data-server==0.7.2
+tensorboardX==2.6.2.2
+termcolor==1.1.0
+terminado @ file:///croot/terminado_1671751832461/work
+# Editable install with no version control (test-launch-ros==0.11.7)
+-e /root/ros2_foxy/build/test_launch_ros
+threadpoolctl==3.5.0
+tifffile @ file:///tmp/build/80754af9/tifffile_1627275862826/work
+tinycss2 @ file:///croot/tinycss2_1668168815555/work
+toml==0.10.2
+toolz @ file:///croot/toolz_1667464077321/work
+# Editable install with no version control (topic-monitor==0.9.4)
+-e /root/ros2_foxy/build/topic_monitor
+torch==2.4.1+cu124
+torchaudio==2.4.1+cu124
+torchvision==0.19.1+cu124
+tornado @ file:///croot/tornado_1718740109488/work
+# Editable install with no version control (tracetools-launch==1.0.6)
+-e /root/ros2_foxy/build/tracetools_launch
+# Editable install with no version control (tracetools-read==1.0.6)
+-e /root/ros2_foxy/build/tracetools_read
+# Editable install with no version control (tracetools-trace==1.0.6)
+-e /root/ros2_foxy/build/tracetools_trace
+traitlets @ file:///croot/traitlets_1718227057033/work
+triton==3.0.0
+typer==0.15.1
+typing-extensions @ file:///croot/typing_extensions_1715268824938/work
+unicodedata2 @ file:///croot/unicodedata2_1713212950228/work
+urllib3 @ file:///croot/urllib3_1727769808118/work
+virtualenv==20.28.0
+wcwidth @ file:///Users/ktietz/demo/mc3/conda-bld/wcwidth_1629357192024/work
+webencodings==0.5.1
+websocket-client @ file:///croot/websocket-client_1715878298792/work
+werkzeug==3.0.6
+xacro==1.13.3
+yapf==0.31.0
+zipp @ file:///croot/zipp_1729012354496/work
