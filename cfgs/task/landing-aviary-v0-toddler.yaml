@@ -1,0 +1,11 @@
+defaults:
+  - _self_
+
+task_name: landing-aviary-v0
+toddler_env_name: toddler-landing-aviary-v0
+num_train_frames: 3600000
+stddev_schedule: 'linear(1.0, 0.01, 3200000)'
+
+curriculum_config:
+  schedule: [160000, 400000, 100000000]
+  num_difficulties: 3

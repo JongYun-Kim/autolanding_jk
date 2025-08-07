@@ -1,0 +1,6 @@
+defaults:
+  - _self_
+
+task_name: gimbal-landing-aviary-v0
+num_train_frames: 3200000
+stddev_schedule: 'linear(1.0, 0.01, 3000000)'
