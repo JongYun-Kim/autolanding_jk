@@ -21,7 +21,7 @@ import utils
 from logger import Logger
 from replay_buffer import ReplayBufferStorage, make_replay_loader
 from video import TrainVideoRecorder, VideoRecorder
-from decomposed_networks import Actor_Decomposed, Encoder_Decomposed
+# from decomposed_networks import Actor_Decomposed, Encoder_Decomposed
 
 torch.backends.cudnn.benchmark = True
 
