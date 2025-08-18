@@ -670,7 +670,7 @@ class LandingGimbalAviary(LandingAviary):
                  record=False,
                  obs: ObservationType=ObservationType.RGB,
                  act: ActionType=ActionType.VEL,
-                 episode_len_sec: int=30,
+                 episode_len_sec: int=16,
                  ):
         """Initialization of a single agent RL environment with gimbal control."""
         print("In [gym_pybullet_drones] LandingGimbalAviary inits..$")
@@ -895,4 +895,206 @@ class LandingGimbalAviary(LandingAviary):
 
         vel_cmd = action[0:3]
         return super().step(vel_cmd)
+
+
+class LandingGimbalOracleAviary(LandingGimbalAviary):
+    """
+    Oracle gimbal controller version:
+    - RL은 드론의 velocity 명령만 학습 (action[0:3])
+    - Gimbal yaw/pitch는 매 step마다 오라클이 착륙패드(UGV) 중심을 바라보도록 자동 설정
+    - Roll은 0으로 고정
+    - 짐벌 각도 범위(self.gimbal_angle_ranges)를 그대로 사용하고, 내부적으로 [-1,1] 정규화 사용
+    """
+
+    def __init__(self, *args, **kwargs):
+        print("In [gym_pybullet_drones] LandingGimbalOracleAviary inits..$")
+        super().__init__(*args, **kwargs)
+
+        # 오라클에서 사용할 카메라 로컬 기준 벡터(전방/업방향)
+        # 전방을 +x로 두고, 업을 +z로 두면 yaw(z)->pitch(y)로 자연스러운 pan-tilt가 가능
+        self._cam_dir_local = np.array([1.0, 0.0, 0.0], dtype=np.float32)  # forward
+        self._cam_up_local  = np.array([0.0, 0.0, 1.0], dtype=np.float32)  # up
+
+        # 드론 본체 기준의 카메라 위치 오프셋 (아래로 5cm)
+        self._cam_offset_local = np.array([0.0, 0.0, -0.05], dtype=np.float32)
+
+        # FOV/프로젝션 (원본과 동일/유사)
+        self._fov_deg = 85.7
+        self._near    = 0.03
+        self._far     = 200.0
+        self._aspect  = 1.0
+
+    # --- 스페이스 정의: 기존과 호환 유지 (gimbal 차원은 무시됨) ---
+    def _actionSpace(self):
+        if self.ACT_TYPE == ActionType.VEL:
+            size = 3  # 기존과 동일하게 유지 (정책/리플레이 호환)
+            return spaces.Box(low=-1*np.ones(size), high=np.ones(size), dtype=np.float32)
+        else:
+            print(f"[ERROR] in {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}()")
+            exit()
+
+    # --- 공용 유틸: 라디안→정규화 / 정규화→라디안 ---
+    def _rad_to_norm(self, angles_rad):
+        """angles_rad shape (3,): [pitch(rad), roll(rad), yaw(rad)] -> [-1,1]^3"""
+        lo = self.gimbal_angle_ranges[:, 0]
+        hi = self.gimbal_angle_ranges[:, 1]
+        return 2.0 * (np.asarray(angles_rad) - lo) / (hi - lo) - 1.0
+
+    def _norm_to_rad(self, angles_norm):
+        """[-1,1]^3 -> radians (3,)"""
+        lo = self.gimbal_angle_ranges[:, 0]
+        hi = self.gimbal_angle_ranges[:, 1]
+        return lo + 0.5 * (np.asarray(angles_norm) + 1.0) * (hi - lo)
+
+    # --- 오라클 메인 로직: UGV를 정중앙에 두도록 yaw/pitch 계산 ---
+    def _update_gimbal_oracle(self):
+        """
+        1) 드론/카메라 위치와 UGV(착륙패드) 중심 위치를 가져옴
+        2) 월드좌표 목표방향을 드론 로컬 프레임으로 변환
+        3) pan-tilt(=yaw(z), pitch(y))로 해당 방향을 조준
+        4) 각도 제한/정규화 후 self.gimbal_target 갱신 (roll=0 고정)
+        """
+        # 1) 위치/자세
+        UGV_pos = np.array(self._get_vehicle_position()[0])  # (3,)
+        drone_state = self._getDroneStateVector(0)
+        drone_pos = drone_state[0:3]
+        drone_quat = self.quat[0, :]  # [x,y,z,w]
+        rot_drone = np.array(p.getMatrixFromQuaternion(drone_quat)).reshape(3, 3)
+
+        # 카메라 실제 위치(월드)
+        cam_pos_world = drone_pos + rot_drone @ self._cam_offset_local
+
+        # 2) 목표 방향(월드→드론 로컬)
+        to_target_world = UGV_pos - cam_pos_world
+        dist = np.linalg.norm(to_target_world)
+        if dist < 1e-6:
+            # 거의 같은 위치면 이전 상태 유지
+            return
+
+        dir_world = to_target_world / dist  # 정규화
+        dir_local = rot_drone.T @ dir_world  # 드론 로컬 프레임으로 변환
+
+        # 3) yaw(z) → pitch(y)로 카메라 forward(+x) 벡터를 dir_local로 보냄
+        #    - yaw = atan2(y, x)
+        #    - pitch = atan2(-z, sqrt(x^2 + y^2))  (x-y 수평면 대비 고도각)
+        x, y, z = dir_local.astype(np.float64)  # 안정적 atan2
+        yaw = np.arctan2(y, x)
+        pitch = np.arctan2(-z, np.sqrt(x*x + y*y))
+        roll = 0.0
+
+        # 각도 제한(클램프)
+        lo = self.gimbal_angle_ranges[:, 0]
+        hi = self.gimbal_angle_ranges[:, 1]
+        pitch = float(np.clip(pitch, lo[0], hi[0]))
+        roll  = float(np.clip(roll,  lo[1], hi[1]))
+        yaw   = float(np.clip(yaw,   lo[2], hi[2]))
+
+        # 정규화하여 gimbal_target 업데이트
+        angles_rad = np.array([pitch, roll, yaw], dtype=np.float32)
+        self.gimbal_target = self._rad_to_norm(angles_rad)
+
+        # 쿼터니언(오라클의 회전 순서: yaw(z) → pitch(y) → roll(x가 아니라 y?) 주의!
+        # 여기서는 카메라 회전행렬을 직접 구성해서 사용하므로, 상태표시는 참조용:
+        # SciPy는 'ZYX'가 yaw→pitch→roll(내접) 의미로 흔히 쓰이지만, 여기선 pitch를 y축으로 썼으니 'ZYX' 대신 'ZYX'와 축매핑이 다릅니다.
+        # 상태 모니터링만 할 것이므로, 단순히 같은 순서를 가정하고 저장합니다.
+        self.gimbal_state_quat = R.from_euler('ZYX', [yaw, pitch, 0.0]).as_quat()
+
+    # --- 오라클용 카메라 렌더: 오라클 회전 정의에 맞춰 재작성 ---
+    def _getDroneImages(self, nth_drone, segmentation: bool=True):
+        """
+        오라클 버전 렌더:
+        - yaw(z)와 pitch(y)를 적용한 후, 드론 자세(rot_drone)를 곱해 월드 카메라 방향/업벡터 생성
+        - self.gimbal_target은 이미 오라클이 갱신
+        """
+        if self.gimbal_target is None:
+            # reset() 또는 첫 step()에서 세팅
+            raise ValueError("gimbal_target is not set. Call reset() or step() first.")
+
+        if self.IMG_RES is None:
+            print(f"[ERROR] in {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}(), "
+                  f"remember to set self.IMG_RES to np.array([width, height])")
+            exit()
+
+        # 정규화→라디안
+        pitch_rad, roll_rad, yaw_rad = self._norm_to_rad(self.gimbal_target)
+
+        # 드론 자세
+        drone_pos = self.pos[nth_drone, :]
+        drone_quat = self.quat[nth_drone, :]
+        rot_drone = np.array(p.getMatrixFromQuaternion(drone_quat)).reshape(3, 3)
+
+        # 카메라 위치(월드)
+        cam_pos_world = np.array(drone_pos) + rot_drone @ self._cam_offset_local
+
+        # 짐벌 회전(오라클 정의): yaw(z) → pitch(y) → roll(x=0)
+        yaw_rot = np.array([
+            [np.cos(yaw_rad), -np.sin(yaw_rad), 0],
+            [np.sin(yaw_rad),  np.cos(yaw_rad), 0],
+            [0,                0,               1]
+        ], dtype=np.float32)
+        pitch_rot = np.array([
+            [ np.cos(pitch_rad), 0, np.sin(pitch_rad)],
+            [ 0,                 1, 0                ],
+            [-np.sin(pitch_rad), 0, np.cos(pitch_rad)]
+        ], dtype=np.float32)
+        roll_rot = np.eye(3, dtype=np.float32)  # roll=0 고정
+
+        gimbal_rot_local = pitch_rot @ yaw_rot  # (우측곱 기준: yaw 먼저, 그다음 pitch)
+
+        # 로컬 카메라 방향/업벡터 회전 → 드론 자세 적용
+        cam_dir_world = rot_drone @ (gimbal_rot_local @ self._cam_dir_local)
+        cam_up_world  = rot_drone @ (gimbal_rot_local @ self._cam_up_local)
+
+        # 타깃 포인트(멀리)
+        target_world = cam_pos_world + cam_dir_world * 1000.0
+
+        DRONE_CAM_VIEW = p.computeViewMatrix(
+            cameraEyePosition=cam_pos_world,
+            cameraTargetPosition=target_world,
+            cameraUpVector=cam_up_world,
+            physicsClientId=self.CLIENT
+        )
+        DRONE_CAM_PRO = p.computeProjectionMatrixFOV(
+            fov=self._fov_deg,
+            aspect=self._aspect,
+            nearVal=self._near,
+            farVal=self._far
+        )
+
+        SEG_FLAG = p.ER_SEGMENTATION_MASK_OBJECT_AND_LINKINDEX if segmentation else p.ER_NO_SEGMENTATION_MASK
+
+        [_, _, rgb, _, _] = p.getCameraImage(
+            width=self.IMG_RES[0],
+            height=self.IMG_RES[1],
+            shadow=1,
+            viewMatrix=DRONE_CAM_VIEW,
+            projectionMatrix=DRONE_CAM_PRO,
+            flags=SEG_FLAG,
+            physicsClientId=self.CLIENT
+        )
+
+        if self.distortion:
+            raise NotImplementedError("Distortion is not implemented for LandingGimbalOracleAviary.")
+
+        rgb = np.moveaxis(rgb, -1, 0)
+        return rgb, None, None
+
+    # --- Gym API ---
+    def reset(self):
+        obs = super().reset()
+        # 초기에는 오라클 한 번 갱신해서 gimbal_target을 유효하게 만들어둠
+        self._update_gimbal_oracle()
+        return obs
+
+    def step(self, action):
+        """
+        - gimbal 관련 action 차원은 무시됨
+        - 오라클로 gimbal_target 업데이트 후, 부모 클래스의 step 호출
+        """
+        # 1) 오라클로 짐벌 갱신
+        self._update_gimbal_oracle()
+
+        # 2) 드론 속도 명령만 전달
+        vel_cmd = action[0:3]
+        return super(LandingGimbalAviary, self).step(vel_cmd)  # LandingGimbalAviary의 부모(LandingAviary)의 step 호출
 

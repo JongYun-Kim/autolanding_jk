@@ -49,6 +49,10 @@ register(
     id='gimbal-landing-aviary-v0',
     entry_point='gym_pybullet_drones.envs.single_agent_rl.LandingAviary:LandingGimbalAviary',
 )
+register(
+    id='gimbal-oracle-landing-aviary-v0',
+    entry_point='gym_pybullet_drones.envs.single_agent_rl.LandingAviary:LandingGimbalOracleAviary',
+)
 
 
 register(
