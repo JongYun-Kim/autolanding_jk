@@ -907,6 +907,7 @@ class LandingGimbalOracleAviary(LandingGimbalAviary):
     todos:
     - [o] Implement the gimbal oracle logic in the step (or get_obs)
     - [o] Implement the gimbal oracle logic in the reset
+    - [ ] Implement reward function that properly reflects LOS rewarding
     """
 
     def __init__(self, *args, **kwargs):
