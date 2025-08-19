@@ -227,6 +227,14 @@ class FrameStackWrapperWithGimbalState(FrameStackWrapper):
 
         return self._transform_observation(time_step)
 
+
+class FrameStackWrapperWithGimbalOracle(FrameStackWrapperWithGimbalState):
+    def __init__(self, env, num_frames, pixels_key='pixels'):
+        super().__init__(env, num_frames, pixels_key)
+
+    def action_spec(self):
+        return BoundedArray((3,), np.float32, minimum = -1, maximum = 1, name = 'action')
+
 class ExtendedTimeStepWrapper(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -337,6 +345,12 @@ def make_with_gimbal(name, frame_stack, action_repeat, seed):
         print(name)
     env = gym.make(name)
     env = FrameStackWrapperWithGimbalState(env, frame_stack)
+    env = ExtendedTimeStepWrapper(env)
+    return env
+
+def make_with_gimbal_oracle(name, frame_stack, action_repeat, seed):
+    env = gym.make(name)
+    env = FrameStackWrapperWithGimbalOracle(env, frame_stack)
     env = ExtendedTimeStepWrapper(env)
     return env
 

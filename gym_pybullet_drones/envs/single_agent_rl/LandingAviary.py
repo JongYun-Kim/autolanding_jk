@@ -904,6 +904,9 @@ class LandingGimbalOracleAviary(LandingGimbalAviary):
     - Gimbal yaw/pitch는 매 step마다 오라클이 착륙패드(UGV) 중심을 바라보도록 자동 설정
     - Roll은 0으로 고정
     - 짐벌 각도 범위(self.gimbal_angle_ranges)를 그대로 사용하고, 내부적으로 [-1,1] 정규화 사용
+    todos:
+    - [o] Implement the gimbal oracle logic in the step (or get_obs)
+    - [o] Implement the gimbal oracle logic in the reset
     """
 
     def __init__(self, *args, **kwargs):
@@ -997,7 +1000,19 @@ class LandingGimbalOracleAviary(LandingGimbalAviary):
         # 여기서는 카메라 회전행렬을 직접 구성해서 사용하므로, 상태표시는 참조용:
         # SciPy는 'ZYX'가 yaw→pitch→roll(내접) 의미로 흔히 쓰이지만, 여기선 pitch를 y축으로 썼으니 'ZYX' 대신 'ZYX'와 축매핑이 다릅니다.
         # 상태 모니터링만 할 것이므로, 단순히 같은 순서를 가정하고 저장합니다.
-        self.gimbal_state_quat = R.from_euler('ZYX', [yaw, pitch, 0.0]).as_quat()
+        # self.gimbal_state_quat = R.from_euler('ZYX', [yaw, pitch, 0.0]).as_quat()
+        yaw_rot = np.array([
+            [np.cos(yaw), -np.sin(yaw), 0],
+            [np.sin(yaw), np.cos(yaw), 0],
+            [0, 0, 1]
+        ], dtype=np.float32)
+        pitch_rot = np.array([
+            [np.cos(pitch), 0, np.sin(pitch)],
+            [0, 1, 0],
+            [-np.sin(pitch), 0, np.cos(pitch)]
+        ], dtype=np.float32)
+        gimbal_rot_local = pitch_rot @ yaw_rot  # 렌더와 동일
+        self.gimbal_state_quat = R.from_matrix(gimbal_rot_local).as_quat()
 
     # --- 오라클용 카메라 렌더: 오라클 회전 정의에 맞춰 재작성 ---
     def _getDroneImages(self, nth_drone, segmentation: bool=True):
@@ -1040,6 +1055,7 @@ class LandingGimbalOracleAviary(LandingGimbalAviary):
         roll_rot = np.eye(3, dtype=np.float32)  # roll=0 고정
 
         gimbal_rot_local = pitch_rot @ yaw_rot  # (우측곱 기준: yaw 먼저, 그다음 pitch)
+        self.gimbal_state_quat = R.from_matrix(gimbal_rot_local).as_quat()
 
         # 로컬 카메라 방향/업벡터 회전 → 드론 자세 적용
         cam_dir_world = rot_drone @ (gimbal_rot_local @ self._cam_dir_local)
