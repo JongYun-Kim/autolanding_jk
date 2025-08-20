@@ -4,7 +4,8 @@ import hydra
 import numpy as np
 from omegaconf import OmegaConf
 import torch
-from train_toddler import Workspace
+# from train_toddler import Workspace
+from train_gimbal_oracle import Workspace
 from video import VideoRecorder  # for recording evaluation videos
 import csv
 
@@ -115,7 +116,8 @@ def my_tests(cfg):
         target_dir = exp["target_dir"]
         num_episodes = exp["num_episodes"]
 
-        snapshot_name = "snapshot.pt"
+        # snapshot_name = "snapshot.pt"
+        snapshot_name = "snapshot_bk_2601k.pt"
         snapshot_path = os.path.join(target_dir, snapshot_name)
 
         if not os.path.exists(target_dir):
@@ -177,27 +179,12 @@ def my_tests(cfg):
 
 
 def setup_exp():
-    num_episodes = 128
+    num_episodes = 200
 
     experiment_settings = [
         {
-            "model_type": "drqv2-mv-toddler-base",
-            "target_dir": "/home/user/landing/exp_local/2025.05.07/210855_/",
-            "num_episodes": num_episodes,
-        },
-        {
-            "model_type": "drqv2-mv-toddler-s3",
-            "target_dir": "/home/user/landing/exp_local/2025.06.02/225452_seed=3/",
-            "num_episodes": num_episodes,
-        },
-        {
-            "model_type": "drqv2-mv-s0",
-            "target_dir": "/home/user/landing/exp_local/2025.05.17/031234_replay_buffer_size=160000,seed=0/",
-            "num_episodes": num_episodes,
-        },
-        {
-            "model_type": "drqv2-mv-s1",
-            "target_dir": "/home/user/landing/exp_local/2025.05.18/112032_replay_buffer_size=160000,seed=1/",
+            "model_type": "drqv2-oracle-gimbal",
+            "target_dir": "/home/user/landing/exp_local/2025.08.19/192658_seed=42/",
             "num_episodes": num_episodes,
         },
     ]
