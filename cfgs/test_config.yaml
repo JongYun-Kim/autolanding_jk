@@ -1,7 +1,7 @@
 defaults:
   - _self_
 #  - task@_global_: landing-aviary-v0-toddler
-  - task@_global_: landing-aviary-v0-gimbal-oracle
+  - task@_global_: landing-aviary-v0-gimbal
   - override hydra/launcher: submitit_local
 
 # task settings
