@@ -206,8 +206,11 @@ class Workspace:
         with snapshot.open('wb') as f:
             torch.save(payload, f)
 
-    def load_snapshot(self):
-        snapshot = self.work_dir / 'snapshot.pt'
+    def load_snapshot(self, checkpoint_dir=None):
+        if checkpoint_dir is None:
+            snapshot = self.work_dir / 'snapshot.pt'
+        else:
+            snapshot = Path(checkpoint_dir)
         with snapshot.open('rb') as f:
             payload = torch.load(f)
         for k, v in payload.items():
