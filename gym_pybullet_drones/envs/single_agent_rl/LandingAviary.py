@@ -25,7 +25,7 @@ class LandingAviary(BaseSingleAgentAviary):
                  record=False, 
                  obs: ObservationType=ObservationType.RGB,
                  act: ActionType=ActionType.VEL,
-                 episode_len_sec: int=16,
+                 episode_len_sec: int=21,
                  ):
         """Initialization of a single agent RL environment.
 
@@ -672,21 +672,31 @@ class LandingGimbalAviary(LandingAviary):
                  record=False,
                  obs: ObservationType=ObservationType.RGB,
                  act: ActionType=ActionType.VEL,
-                 episode_len_sec: int=16,
+                 episode_len_sec: int=18,
                  ):
         """Initialization of a single agent RL environment with gimbal control."""
         print("In [gym_pybullet_drones] LandingGimbalAviary inits..$")
 
+        self._cam_dir_local = np.array([1.0, 0.0, 0.0], dtype=np.float32)  # camera forward (+x)
+        self._cam_up_local = np.array([0.0, 0.0, 1.0], dtype=np.float32)  # camera up (+z)
+        self._cam_offset_local = np.array([0.0, 0.0, -0.05], dtype=np.float32)  # 아래로 5cm
+
+        # FOV/프로젝션 (오라클과 동일하게)
+        self._fov_deg = 85.7
+        self._near = 0.03
+        self._far = 200.0
+        self._aspect = 1.0
+
         # Angles: [pitch,  roll,  yaw]
         # gimbal_target: target gimbal angles in normalized [-1, 1] range
         self.gimbal_target = None  # action[3:]
-        self.initial_gimbal_target = np.array([-1.0, 0.0, 0.0])  # camera pointing down, no roll, no yaw
+        self.initial_gimbal_target = np.array([1.0, 0.0, 0.0])  # camera pointing down, no roll, no yaw
 
         # Gimbal specs
         self.gimbal_angle_ranges = np.array([  # (3,2)
-            [-np.pi/2, 0      ],  # Pitch: -90  to 0   degrees
+            [0       , np.pi/2],  # Pitch: 0    to 90  degrees
             [-np.pi/4, np.pi/4],  # Roll : -45  to 45  degrees
-            [-np.pi,   np.pi  ]   # Yaw  : -180 to 180 degrees
+            [-np.pi  , np.pi  ]   # Yaw  : -180 to 180 degrees
         ], dtype=np.float32)  # Ranges for gimbal angles in radians
 
         # gimbal_state_quat: current gimbal angles in quaternion format
@@ -733,94 +743,78 @@ class LandingGimbalAviary(LandingAviary):
         else:
             print(f"[ERROR] in {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}()")
 
-    def _getDroneImages(self, nth_drone, segmentation: bool=True):
-        # Default gimbal target if not defined
-        if self.gimbal_target is not None:
-            gimbal_target = self.gimbal_target  # (3,) in [-1, 1]
-        else:
-            raise ValueError(f"gimbal_target is not set. Please set it before calling {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}()")
+    def _rad_to_norm(self, angles_rad):
+        """angles_rad shape (3,): [pitch(rad), roll(rad), yaw(rad)] -> [-1,1]^3"""
+        lo = self.gimbal_angle_ranges[:, 0]
+        hi = self.gimbal_angle_ranges[:, 1]
+        return 2.0 * (np.asarray(angles_rad) - lo) / (hi - lo) - 1.0
 
-        # Convert normalized gimbal_target (-1 to 1) to actual target angle ranges
-        # Pitch: self.gimbal_angle_ranges[0,0] to self.gimbal_angle_ranges[0,1] in radians
-        # Roll : self.gimbal_angle_ranges[1,0] to self.gimbal_angle_ranges[1,1] in radians
-        # Yaw  : self.gimbal_angle_ranges[2,0] to self.gimbal_angle_ranges[2,1] in radians
-        normalized_angles = (gimbal_target + 1) / 2.0  # (3,) in [0, 1]
-        angle_ranges = self.gimbal_angle_ranges[:, 1] - self.gimbal_angle_ranges[:, 0]  # (3,) in radians
-        gimbal_rad = self.gimbal_angle_ranges[:, 0] + normalized_angles * angle_ranges
-        pitch_rad, roll_rad, yaw_rad = gimbal_rad
+    def _norm_to_rad(self, angles_norm):
+        """[-1,1]^3 -> radians (3,) in order [pitch, roll, yaw]"""
+        lo = self.gimbal_angle_ranges[:, 0]
+        hi = self.gimbal_angle_ranges[:, 1]
+        return lo + 0.5 * (np.asarray(angles_norm) + 1.0) * (hi - lo)
 
-        # Update gimbal state quaternion based on target angles
-        # yaw→pitch→roll = intrinsic ZYX Euler:
-        self.gimbal_state_quat = R.from_euler('ZYX',[yaw_rad, pitch_rad, roll_rad]).as_quat()   # [x,y,z,w]; nparray (4,)
-
-        # Get drone orientation
-        drone_pos = self.pos[nth_drone, :]
-        drone_orientation = self.quat[nth_drone, :]
-        rot_drone = np.array(p.getMatrixFromQuaternion(drone_orientation)).reshape(3, 3)
-
-        # Apply camera offset in drone local frame (below drone)
-        local_offset = np.array([0.0, 0.0, -0.05])
-        world_offset = rot_drone @ local_offset
-        camera_pos = np.array(drone_pos) + world_offset
-
-        # Gimbal rotation matrices
-        # Pitch (around x-axis)
-        pitch_rot = np.array([
-            [1, 0, 0],
-            [0, np.cos(pitch_rad), -np.sin(pitch_rad)],
-            [0, np.sin(pitch_rad), np.cos(pitch_rad)]
-        ], dtype=np.float32)
-        # Roll (around y-axis)
-        roll_rot = np.array([
-            [np.cos(roll_rad), 0, np.sin(roll_rad)],
-            [0, 1, 0],
-            [-np.sin(roll_rad), 0, np.cos(roll_rad)]
-        ], dtype=np.float32)
-        # Yaw (around z-axis)
+    def _gimbal_rot_from_angles(self, pitch_rad, roll_rad, yaw_rad):
+        """R_local = Rz(yaw) @ Ry(pitch); roll은 현재 0으로 고정해 사용"""
         yaw_rot = np.array([
             [np.cos(yaw_rad), -np.sin(yaw_rad), 0],
             [np.sin(yaw_rad), np.cos(yaw_rad), 0],
             [0, 0, 1]
         ], dtype=np.float32)
+        pitch_rot = np.array([
+            [np.cos(pitch_rad), 0, np.sin(pitch_rad)],
+            [0, 1, 0],
+            [-np.sin(pitch_rad), 0, np.cos(pitch_rad)]
+        ], dtype=np.float32)
+        # roll은 0으로 두므로 별도 회전 불가피시 np.eye 사용
+        return yaw_rot @ pitch_rot
 
-        # Apply rotation in Yaw → Pitch → Roll order (항공 시스템 convention)
-        gimbal_rot = roll_rot @ pitch_rot @ yaw_rot
-
-        # Local camera direction and up vectors
-        camera_dir_local = np.array([0.0, 0.0, -1.0])  #np.array([0, 0, -1])
-        camera_up_local = np.array([0.0, 1.0, 0.0])  #np.array([1, 0, 0])
-
-        # Rotate by gimbal
-        camera_dir_rot = gimbal_rot @ camera_dir_local
-        camera_up_rot = gimbal_rot @ camera_up_local
-
-        # Then rotate by drone orientation
-        camera_dir = rot_drone @ camera_dir_rot
-        camera_up = rot_drone @ camera_up_rot
-
-        # Camera target (far ahead in direction)
-        target = camera_pos + camera_dir * 1000.0
-
+    def _getDroneImages(self, nth_drone, segmentation: bool = True):
+        """
+        - self.gimbal_target([-1,1]^3) -> (pitch,roll,yaw)[rad] -> R_local = Rz@Ry
+        - world forward/up를 만든 후 PyBullet view/projection으로 렌더
+        - self.gimbal_state_quat은 실제 사용한 R_local로부터 생성(정합 보장)
+        """
+        if self.gimbal_target is None:
+            raise ValueError("gimbal_target is not set. Call reset() or step() first.")
         if self.IMG_RES is None:
             print(f"[ERROR] in {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}(), "
                   f"remember to set self.IMG_RES to np.array([width, height])")
             exit()
 
+        # 1) 정규화 -> 라디안
+        pitch_rad, roll_rad, yaw_rad = self._norm_to_rad(self.gimbal_target)
+
+        # 2) 드론 자세
+        drone_pos = self.pos[nth_drone, :]
+        drone_quat = self.quat[nth_drone, :]
+        rot_drone = np.array(p.getMatrixFromQuaternion(drone_quat)).reshape(3, 3)
+
+        # 3) 짐벌 로컬 회전(Rz @ Ry)
+        gimbal_rot_local = self._gimbal_rot_from_angles(pitch_rad, roll_rad, yaw_rad)
+        self.gimbal_state_quat = R.from_matrix(gimbal_rot_local).as_quat()
+
+        # 4) 카메라 월드 기준 방향/업벡터
+        cam_pos_world = np.array(drone_pos) + rot_drone @ self._cam_offset_local
+        cam_dir_world = rot_drone @ (gimbal_rot_local @ self._cam_dir_local)
+        cam_up_world = rot_drone @ (gimbal_rot_local @ self._cam_up_local)
+
+        target_world = cam_pos_world + cam_dir_world * 1000.0
+
         DRONE_CAM_VIEW = p.computeViewMatrix(
-            cameraEyePosition=camera_pos,
-            cameraTargetPosition=target,
-            cameraUpVector=camera_up,
+            cameraEyePosition=cam_pos_world,
+            cameraTargetPosition=target_world,
+            cameraUpVector=cam_up_world,
             physicsClientId=self.CLIENT
         )
-
         DRONE_CAM_PRO = p.computeProjectionMatrixFOV(
-            fov=85.7,
-            aspect=1.0,
-            nearVal=0.03,
-            farVal=200.0
+            fov=self._fov_deg,
+            aspect=self._aspect,
+            nearVal=self._near,
+            farVal=self._far
         )
 
-        # Segmentation flag
         SEG_FLAG = p.ER_SEGMENTATION_MASK_OBJECT_AND_LINKINDEX if segmentation else p.ER_NO_SEGMENTATION_MASK
 
         [_, _, rgb, _, _] = p.getCameraImage(
@@ -836,67 +830,232 @@ class LandingGimbalAviary(LandingAviary):
         if self.distortion:
             raise NotImplementedError("Distortion is not implemented for LandingGimbalAviary.")
 
-        rgb = np.moveaxis(rgb, -1, 0)
-
+        rgb = np.moveaxis(rgb, -1, 0)  # (C,H,W)
         return rgb, None, None
 
-    def _getDroneImages_myog(self, nth_drone, segmentation: bool=True):
-        # target angles: # 0: pitch, 1: roll, 2: yaw
-        initial_gimbal_target = np.zeros(3)
-        gimbal_target = self.gimbal_target if self.gimbal_target is not None else initial_gimbal_target
+    def compute_oracle_gimbal(self):
+        """
+        현재 드론 상태에서 'UGV를 정중앙'에 두도록 하는 오라클 짐벌을 계산만 합니다.
+        - env 상태는 바꾸지 않음 (self.gimbal_target 변경 없음)
+        - 반환:
+          dict {
+            'quat': np.ndarray(4,)  # [x,y,z,w] 로컬(드론기준) 카메라 회전
+            'angles_rad': np.ndarray(3,)  # [pitch, roll(=0), yaw], radians
+            'angles_norm': np.ndarray(3,) # 위 angles_rad 를 [-1,1]^3 범위로 정규화
+          }
+        """
+        # 1) 드론/UGV/카메라 위치/자세
+        UGV_pos = np.array(self._get_vehicle_position()[0], dtype=np.float64)
+        drone_state = self._getDroneStateVector(0)
+        drone_pos = drone_state[0:3].astype(np.float64)
+        drone_quat = self.quat[0, :]
+        rot_drone = np.array(p.getMatrixFromQuaternion(drone_quat)).reshape(3, 3).astype(np.float64)
 
-        if self.IMG_RES is None:
-            print(f"[ERROR] in {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}(), "
-                  f"remember to set self.IMG_RES to np.array([width, height])")
-            exit()
+        cam_pos_world = drone_pos + rot_drone @ self._cam_offset_local
 
-        rot_mat = np.array(p.getMatrixFromQuaternion(self.quat[nth_drone, :])).reshape(3, 3)
+        # 2) 목표 방향(월드)
+        to_target_world = UGV_pos - cam_pos_world
+        dist = np.linalg.norm(to_target_world)
+        if dist < 1e-9:
+            # 거의 같은 위치면 이전 값에 의존해야 하지만, 여기서는 정면으로 가정
+            f_world = rot_drone @ self._cam_dir_local
+        else:
+            f_world = to_target_world / dist
 
-        # Set target point, camera view and projection matrices #
-        target = np.dot(rot_mat, np.array([0, 0, -1000])) + np.array(self.pos[nth_drone, :])
+        # 3) 안정적인 월드 업 기준
+        up_ref = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+        if abs(np.dot(f_world, up_ref)) > 0.95:
+            up_ref = np.array([0.0, 1.0, 0.0], dtype=np.float64)
 
-        # Image fov and res
-        fov = 85.7
-        img_res = self.IMG_RES
+        # 4) 월드 기준 right/up
+        right_world = np.cross(up_ref, f_world);
+        right_world /= (np.linalg.norm(right_world) + 1e-12)
+        up_world = np.cross(f_world, right_world);
+        up_world /= (np.linalg.norm(up_world) + 1e-12)
 
-        DRONE_CAM_VIEW = p.computeViewMatrix(cameraEyePosition=self.pos[nth_drone, :] - np.array([0, 0, 0.15]) +np.array([0, 0, self.L]),
-                                             cameraTargetPosition=target,
-                                             cameraUpVector=[1, 0, 0],
-                                             physicsClientId=self.CLIENT
-                                             )
-        DRONE_CAM_PRO =  p.computeProjectionMatrixFOV(fov=fov,
-                                                      aspect=1.0,
-                                                      nearVal=self.L,
-                                                      farVal=1000.0
-                                                      )
-        SEG_FLAG = p.ER_SEGMENTATION_MASK_OBJECT_AND_LINKINDEX if segmentation else p.ER_NO_SEGMENTATION_MASK
+        # 5) 드론 로컬로 가져와 카메라 로컬 회전행렬(R_local) 구성
+        f_local = rot_drone.T @ f_world
+        u_local = rot_drone.T @ up_world
+        f_local /= (np.linalg.norm(f_local) + 1e-12)
+        r_local = np.cross(u_local, f_local);
+        r_local /= (np.linalg.norm(r_local) + 1e-12)
+        u_local = np.cross(f_local, r_local);
+        u_local /= (np.linalg.norm(u_local) + 1e-12)
 
-        [_, _, rgb, _, _] = p.getCameraImage(width=img_res[0],
-                                                 height=img_res[1],
-                                                 shadow=1,
-                                                 viewMatrix=DRONE_CAM_VIEW,
-                                                 projectionMatrix=DRONE_CAM_PRO,
-                                                 flags=SEG_FLAG,
-                                                 physicsClientId=self.CLIENT
-                                                 )
-        if self.distortion:
-            raise NotImplementedError("Distortion is not implemented for LandingGimbalAviary.")
+        R_local = np.column_stack([f_local, r_local, u_local])  # e_x->f, e_y->r, e_z->u
+        quat = R.from_matrix(R_local).as_quat()
 
-        rgb = np.moveaxis(rgb, -1, 0)
+        # 6) 오라클 규약에서의 (yaw,pitch) 추출, roll=0
+        #    forward=+x, right=+y, up=+z 에서:
+        #    yaw   = atan2(f_local_y, f_local_x)
+        #    pitch = atan2(-f_local_z, sqrt(f_local_x^2 + f_local_y^2))
+        fx, fy, fz = f_local
+        yaw = float(np.arctan2(fy, fx))
+        pitch = float(np.arctan2(-fz, np.sqrt(fx * fx + fy * fy)))
+        roll = 0.0
 
-        return rgb, None, None
+        angles_rad = np.array([pitch, roll, yaw], dtype=np.float32)
+        angles_norm = self._rad_to_norm(angles_rad)
+
+        return {'quat': quat, 'angles_rad': angles_rad, 'angles_norm': angles_norm}
+
+    def is_target_visible(self, margin_deg=0.0, return_details=False):
+        """
+        현재 짐벌 상태/카메라 파라미터에서 UGV가 프레임 내에 있는지 판정.
+        - margin_deg: 여유각(양수면 더 엄격한 프레임 내 판정)
+        - return_details=True 이면 보조정보(픽셀좌표 등) dict도 반환
+        반환:
+          - return_details=False: bool
+          - return_details=True : (bool, dict)
+        """
+        # 1) 기하 확보
+        UGV_pos = np.array(self._get_vehicle_position()[0], dtype=np.float64)
+        drone_pos = self.pos[0, :].astype(np.float64)
+        drone_quat = self.quat[0, :]
+        rot_drone = np.array(p.getMatrixFromQuaternion(drone_quat)).reshape(3, 3).astype(np.float64)
+
+        # 현재 짐벌 회전
+        pitch_rad, roll_rad, yaw_rad = self._norm_to_rad(self.gimbal_target)
+        R_local = self._gimbal_rot_from_angles(pitch_rad, roll_rad, yaw_rad)
+
+        cam_pos_world = drone_pos + rot_drone @ self._cam_offset_local
+        f_world = rot_drone @ (R_local @ self._cam_dir_local)
+        u_world = rot_drone @ (R_local @ self._cam_up_local)
+        r_world = np.cross(u_world, f_world)
+
+        to_target = UGV_pos - cam_pos_world
+        if np.linalg.norm(to_target) < 1e-9:
+            visible = True
+            details = {'pixel': (self.IMG_RES[0] // 2, self.IMG_RES[1] // 2)}
+            return (visible, details) if return_details else visible
+
+        # 2) 카메라 좌표계(+x fwd, +y right, +z up) 성분
+        x_cam = np.dot(to_target, f_world)
+        y_cam = np.dot(to_target, r_world)
+        z_cam = np.dot(to_target, u_world)
+
+        # 3) FOV 판정
+        vfov_half = np.deg2rad(self._fov_deg * 0.5)
+        hfov_half = np.arctan(np.tan(vfov_half) * self._aspect)
+
+        # 여유각 적용
+        vfov_half_eff = vfov_half - np.deg2rad(margin_deg)
+        hfov_half_eff = hfov_half - np.deg2rad(margin_deg)
+        vfov_half_eff = max(vfov_half_eff, 1e-6)
+        hfov_half_eff = max(hfov_half_eff, 1e-6)
+
+        if x_cam <= 0.0:
+            visible = False
+            det = {'reason': 'behind camera', 'pixel': None}
+            return (visible, det) if return_details else visible
+
+        yaw_offset = np.arctan2(y_cam, x_cam)  # 좌우 각
+        pitch_offset = np.arctan2(z_cam, x_cam)  # 상하 각
+
+        visible = (abs(yaw_offset) <= hfov_half_eff) and (abs(pitch_offset) <= vfov_half_eff)
+
+        details = None
+        if return_details:
+            # 4) 픽셀 좌표 추정 (정확한 pinhole 투영 기반)
+            #    u_ndc = (y/x)/tan(hfov_half), v_ndc = (z/x)/tan(vfov_half)  in [-1,1]
+            u_ndc = (y_cam / x_cam) / np.tan(hfov_half)
+            v_ndc = (z_cam / x_cam) / np.tan(vfov_half)
+            # NDC(-1..1) -> pixel(0..W/H); v는 위가 작아야 하므로 반전
+            W, H = int(self.IMG_RES[0]), int(self.IMG_RES[1])
+            u_px = (u_ndc * 0.5 + 0.5) * W
+            v_px = (1.0 - (v_ndc * 0.5 + 0.5)) * H
+            details = {
+                'pixel': (float(u_px), float(v_px)),
+                'yaw_offset_deg': np.rad2deg(yaw_offset),
+                'pitch_offset_deg': np.rad2deg(pitch_offset),
+                'x_cam_y_z': (float(x_cam), float(y_cam), float(z_cam)),
+                'ndc': (float(u_ndc), float(v_ndc))
+            }
+
+        return (visible, details) if return_details else visible
 
     def reset(self):
         self.gimbal_target = self.initial_gimbal_target
+        # _ = super().reset()
+        # # ★ 초기 gimbal로 한 번 캡처해서 env.rgb를 일치시킴
+        # rgb, _, _ = self._getDroneImages(0, segmentation=False)
+        # self.rgb = rgb
+        # return self.rgb
         return super().reset()
 
     def step(self, action):
-        self.gimbal_target = np.array([action[3], 0.0, action[4]])  # force roll to 0.0; smaller action space!
-        if not np.all(np.abs(self.gimbal_target) <= 1):
+        # ★ gimbal action 반영: pitch=action[3], yaw=action[4], roll은 0 고정
+        self.gimbal_target = np.array([action[3], 0.0, action[4]], dtype=np.float32)
+        if not np.all(np.abs(self.gimbal_target) <= 1.0 + 1e-9):
             raise ValueError(f"Gimbal target angles must be in [-1, 1], got {self.gimbal_target}")
 
         vel_cmd = action[0:3]
         return super().step(vel_cmd)
+
+    def _computeReward_good(self):
+        desired_z_velocity = -0.5
+        alpha = 30
+        UGV_pos = np.array(self._get_vehicle_position()[0])
+        drone_state = self._getDroneStateVector(0)
+        drone_position = drone_state[0:3]
+        drone_velocity = drone_state[10:13]
+        distance_xy = np.linalg.norm(drone_position[0:2] - UGV_pos[0:2])
+        distance_z = np.linalg.norm(drone_position[2:3] - UGV_pos[2:3])
+        velocity_z_flag = (0 > drone_velocity[2]) * (drone_velocity[2] > desired_z_velocity)
+        reward_z_velocity = (alpha ** (drone_velocity[2] / desired_z_velocity) - 1) / (alpha - 1)
+        angle = np.rad2deg(np.arctan2(distance_xy, distance_z))
+        # punishment for excessive z velocity
+        if velocity_z_flag == False:
+            if drone_velocity[2] < desired_z_velocity:
+                reward_z_velocity = -0.01  # -abs(drone_velocity[2]/self.SPEED_LIMIT[2])**2
+            else:
+                reward_z_velocity = -0.1  # - 10*drone_velocity[2]
+            if abs(drone_velocity[2]) / self.SPEED_LIMIT[2] > 1.1:
+                reward_z_velocity = 0  # reward_z_velocity -5
+        # reward_xy_velocity = np.sum(-np.abs(drone_velocity[0:2]- desired_xy_velocity))
+        if distance_xy < 10:
+            normalized_distance_xy = 0.1 * (10 - distance_xy)
+            reward_xy = (30 ** normalized_distance_xy - 1) / (30 - 1)
+        else:
+            reward_xy = 0  # -distance_xy
+        combined_reward = 0.6 * reward_xy + 1.0 * reward_z_velocity  # + 0.2*reward_z + reward_z_velocity #np.tanh(reward_z_velocity) #+ reward_xy_velocity
+        if drone_position[2] >= 0.275 and p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ():
+            print('landed!')
+            combined_reward = 140 + combined_reward
+        elif drone_position[2] < 0.275 and p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ():
+            print('crashed!')
+            combined_reward = -1  # normalized_distance_xy * 10 #0#5*distance_xy + combined_reward
+        else:
+            combined_reward = combined_reward
+        # distance_x = np.abs(drone_position[0] - UGV_pos[0])
+        # distance_y = np.abs(drone_position[1] - UGV_pos[1])
+        # if np.abs(angle) > 30 and (distance_y > 0.8 and distance_x > 0.8):
+        #     combined_reward = -0.01
+
+        return combined_reward
+
+    def _computeReward(self):
+
+        if self.is_target_visible():
+            reward = self._computeReward_good()
+
+            # Get the oracle gimbal quaternion
+            oracle_gimbal = self.compute_oracle_gimbal()
+            oracle_quat = oracle_gimbal['quat']  # [x,y,z,w]
+
+            # Current gimbal quaternion
+            current_quat = self.gimbal_state_quat  # [x,y,z,w]
+
+            # Compute the quaternion angle difference
+            dot_product = np.clip(np.dot(oracle_quat, current_quat), -1.0, 1.0)
+            angle_diff = 2 * np.arccos(np.abs(dot_product))  # Angle
+
+            cosine_similarity = np.cos(angle_diff)
+            reward += 0.1 * cosine_similarity  # Scale the reward contribution
+        else:
+            reward = -0.05
+
+        return reward
 
 
 class LandingGimbalOracleAviary(LandingGimbalAviary):
@@ -1127,10 +1286,10 @@ def main():
     show_rgb(env.rgb)
 
     # 몇 스텝 전진/무작위 속도 명령으로 진행해 보며 계속 패드를 가운데에 두는지 확인
-    for t in range(25):
+    for t in range(30):
         # 예: 전진살짝 + 고도유지
-        # action = np.array([0.2, 0.0, 0.01], dtype=np.float32)
-        action = np.array([0.0, 0.0, 0.01, 0, -1], dtype=np.float32)
+        # action = np.array([0.08, 0.0, 0.01], dtype=np.float32)
+        action = np.array([0.0, 0.0, 0.01, 1, 0], dtype=np.float32)
         obs, rew, done, info = env.step(action)
 
         # 쿼터니안 → 오일러 (yaw, pitch, roll)
@@ -1138,7 +1297,7 @@ def main():
         euler = R.from_quat(quat).as_euler('zyx', degrees=True)
         yaw, pitch, roll = euler  # 'zyx' 이므로 [yaw, pitch, roll] 순서
 
-        print(f"step {t+1} gimbal_euler [deg]: yaw={yaw:.2f}, pitch={pitch:.2f}, roll={roll:.2f}")
+        print(f"step {t+1} gimbal_euler [deg]: yaw={yaw:.2f}, pitch={pitch:.2f}, roll={roll:.2f}; quat: {quat}")
 
         if t % 5 == 0:
             show_rgb(env.rgb)
@@ -1147,6 +1306,33 @@ def main():
 
     env.close()
 
+def oracle_test():
+    env = LandingGimbalAviary(episode_len_sec=10, )
+
+    obs = env.reset()
+    quat = env.gimbal_state_quat
+    euler = R.from_quat(quat).as_euler('zyx', degrees=True)
+    yaw, pitch, roll = euler  # 'zyx' 이므로 [yaw, pitch, roll] 순서
+    print(f"reset gimbal_euler [deg]: yaw={yaw:.2f}, pitch={pitch:.2f}, roll={roll:.2f}; quat: {quat}")
+    show_rgb(env.rgb)
+
+    for t in range(200):
+        oracle_dict = env.compute_oracle_gimbal()
+        vel_cmd = np.array([0.0, 0.0, 0.01], dtype=np.float32)
+        action = np.concatenate([vel_cmd, oracle_dict['angles_norm']])
+        obs, rew, done, info = env.step(action)
+
+        quat = env.gimbal_state_quat
+        euler = R.from_quat(quat).as_euler('zyx', degrees=True)
+        yaw, pitch, roll = euler  # 'zyx' 이므로 [yaw, pitch, roll] 순서
+        print(f"step {t+1} gimbal_euler [deg]: yaw={yaw:.2f}, pitch={pitch:.2f}, roll={roll:.2f}; quat: {quat}")
+
+        if t % 5 == 0:
+            show_rgb(env.rgb)
+        if done:
+            break
+
+    env.close()
 
 if __name__ == "__main__":
-    main()
+    oracle_test()
