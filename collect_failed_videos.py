@@ -7,6 +7,7 @@ import torch
 # from train_toddler import Workspace
 from train_gimbal_oracle import Workspace
 # from train_gimbal import Workspace
+# from train import Workspace
 from video import VideoRecorder  # for recording evaluation videos
 import csv
 
@@ -117,8 +118,10 @@ def my_tests(cfg):
         target_dir = exp["target_dir"]
         num_episodes = exp["num_episodes"]
 
-        snapshot_name = "snapshot.pt"
-        # snapshot_name = "snapshot_bk_2601k.pt"
+        if "snapshot_name" in exp:
+            snapshot_name = exp["snapshot_name"]
+        else:
+            snapshot_name = "snapshot.pt"
         snapshot_path = os.path.join(target_dir, snapshot_name)
 
         if not os.path.exists(target_dir):
@@ -180,7 +183,7 @@ def my_tests(cfg):
 
 
 def setup_exp():
-    num_episodes = 4
+    num_episodes = 200
 
     experiment_settings = [
         # {
@@ -188,10 +191,35 @@ def setup_exp():
         #     "target_dir": "/home/user/landing/exp_local/2025.08.19/192658_seed=42/",
         #     "num_episodes": num_episodes,
         # },
+        # {
+        #     "model_type": "drqv2-oracle-gimbal",
+        #     "target_dir": "/home/user/landing/exp_local/2025.08.18/223300_seed=1/",
+        #     "num_episodes": num_episodes,
+        #     "snapshot_name": "snapshot_bk_2601k.pt",
+        # },
+        # {
+        #     "model_type": "drqv2-oracle-gimbal-1400k",
+        #     "target_dir": "/home/user/landing/exp_local/2025.08.21/015303_seed=42/",
+        #     "num_episodes": num_episodes,
+        #     "snapshot_name": "snapshot_bk_1400k.pt",
+        # },
+        # {
+        #     "model_type": "drqv2-oracle-gimbal-1848k",
+        #     "target_dir": "/home/user/landing/exp_local/2025.08.21/015303_seed=42/",
+        #     "num_episodes": num_episodes,
+        #     "snapshot_name": "snapshot_bk_1848k.pt",
+        # },
+        # {
+        #     "model_type": "drqv2-oracle-gimbal-2270k",
+        #     "target_dir": "/home/user/landing/exp_local/2025.08.21/015303_seed=42/",
+        #     "num_episodes": num_episodes,
+        #     "snapshot_name": "snapshot_bk_2270k.pt",
+        # },
         {
-            "model_type": "drqv2-oracle-gimbal",
-            "target_dir": "/home/user/landing/exp_local/2025.08.18/223300_seed=1/",
+            "model_type": "drqv2-base-250819",
+            "target_dir": "/home/user/landing/exp_local/2025.08.19/192507_seed=42/",
             "num_episodes": num_episodes,
+            "snapshot_name": "snapshot.pt",
         },
     ]
 
