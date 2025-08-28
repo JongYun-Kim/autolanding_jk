@@ -6,11 +6,11 @@ from gym_pybullet_drones.envs.single_agent_rl.BaseSingleAgentAviary import Actio
 import pybullet as p
 from gym_pybullet_drones.utils.specs import BoundedArray
 
-# from ...utils.utils import rgb2gray
 from gym_pybullet_drones.utils.utils import rgb2gray
 import inspect
 from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
+
 
 class LandingAviary(BaseSingleAgentAviary):
     """Single agent RL problem: take-off."""
@@ -25,7 +25,7 @@ class LandingAviary(BaseSingleAgentAviary):
                  record=False, 
                  obs: ObservationType=ObservationType.RGB,
                  act: ActionType=ActionType.VEL,
-                 episode_len_sec: int=21,
+                 episode_len_sec: int=18,
                  ):
         """Initialization of a single agent RL environment.
 
@@ -375,7 +375,7 @@ class LandingAviary(BaseSingleAgentAviary):
             print("[WARNING] it", self.step_counter, "in TakeoffAviary._clipAndNormalizeState(), clipped xy velocity [{:.2f} {:.2f}]".format(state[10], state[11]))
         if not(clipped_vel_z == np.array(state[12])).all():
             print("[WARNING] it", self.step_counter, "in TakeoffAviary._clipAndNormalizeState(), clipped z velocity [{:.2f}]".format(state[12]))
-    # for cross compatbility with dm gym
+    # for cross compatibility with dm gym
 
 
 class ToddlerLandingAviary(LandingAviary):
@@ -660,6 +660,7 @@ class LandingGimbalAviary(LandingAviary):
     - [o] Expand the action space to include gimbal control
     - [o] Expand the observation space to include gimbal angles
     - [o] Implement the gimbal control logic in the step or get_obs 
+    - [o] Design a reward function to keep the gimbal pointing the ground vehicle
     """
     def __init__(self,
                  drone_model: DroneModel=DroneModel.CF2X,
@@ -868,18 +869,18 @@ class LandingGimbalAviary(LandingAviary):
             up_ref = np.array([0.0, 1.0, 0.0], dtype=np.float64)
 
         # 4) 월드 기준 right/up
-        right_world = np.cross(up_ref, f_world);
+        right_world = np.cross(up_ref, f_world)
         right_world /= (np.linalg.norm(right_world) + 1e-12)
-        up_world = np.cross(f_world, right_world);
+        up_world = np.cross(f_world, right_world)
         up_world /= (np.linalg.norm(up_world) + 1e-12)
 
         # 5) 드론 로컬로 가져와 카메라 로컬 회전행렬(R_local) 구성
         f_local = rot_drone.T @ f_world
         u_local = rot_drone.T @ up_world
         f_local /= (np.linalg.norm(f_local) + 1e-12)
-        r_local = np.cross(u_local, f_local);
+        r_local = np.cross(u_local, f_local)
         r_local /= (np.linalg.norm(r_local) + 1e-12)
-        u_local = np.cross(f_local, r_local);
+        u_local = np.cross(f_local, r_local)
         u_local /= (np.linalg.norm(u_local) + 1e-12)
 
         R_local = np.column_stack([f_local, r_local, u_local])  # e_x->f, e_y->r, e_z->u
@@ -897,7 +898,7 @@ class LandingGimbalAviary(LandingAviary):
         angles_rad = np.array([pitch, roll, yaw], dtype=np.float32)
         angles_norm = self._rad_to_norm(angles_rad)
 
-        return {'quat': quat, 'angles_rad': angles_rad, 'angles_norm': angles_norm}
+        return {'quat': quat, 'angles_rad': angles_rad, 'angles_norm': angles_norm, 'oracle_forward_local': f_local}
 
     def is_target_visible(self, margin_deg=0.0, return_details=False):
         """
@@ -1034,24 +1035,35 @@ class LandingGimbalAviary(LandingAviary):
 
         return combined_reward
 
-    def _computeReward(self):
+    def _forward_from_norm_angles(self, angles_norm: np.ndarray) -> np.ndarray:
+        """현재 규약(Rz(yaw) @ Ry(pitch))에서 카메라 로컬 forward(+x)가
+           드론 로컬 좌표에서 어디를 가리키는지(단위벡터) 반환."""
+        pitch_rad, _, yaw_rad = self._norm_to_rad(angles_norm)
+        Rg = self._gimbal_rot_from_angles(pitch_rad, 0.0, yaw_rad)  # (3,3) in camera-local basis
+        f_local = Rg @ self._cam_dir_local  # camera-local forward mapped in camera local (여기선 같지만 명시)
+        # 위 f_local은 '카메라 로컬 기준' 벡터. 보상에서 오라클과 같은 기준이면 충분합니다.
+        # 굳이 드론 로컬로 옮기고 싶다면: f_drone = f_local (카메라축 자체가 드론 로컬 축에 정의됨)
+        return f_local / (np.linalg.norm(f_local) + 1e-12)
 
+    def _computeReward(self):
+        # 1) 기본 보상
         if self.is_target_visible():
             reward = self._computeReward_good()
 
-            # Get the oracle gimbal quaternion
-            oracle_gimbal = self.compute_oracle_gimbal()
-            oracle_quat = oracle_gimbal['quat']  # [x,y,z,w]
+            # 2) 오라클 forward
+            oracle = self.compute_oracle_gimbal()
+            R_oracle = R.from_quat(oracle['quat']).as_matrix()  # camera-local rotation in drone frame
+            f_oracle = R_oracle @ self._cam_dir_local
+            f_oracle /= (np.linalg.norm(f_oracle) + 1e-12)
 
-            # Current gimbal quaternion
-            current_quat = self.gimbal_state_quat  # [x,y,z,w]
+            # 3) 현재 짐벌 forward (현재 액션/타겟에서 직접 계산)
+            f_curr = self._forward_from_norm_angles(self.gimbal_target)
 
-            # Compute the quaternion angle difference
-            dot_product = np.clip(np.dot(oracle_quat, current_quat), -1.0, 1.0)
-            angle_diff = 2 * np.arccos(np.abs(dot_product))  # Angle
-
-            cosine_similarity = np.cos(angle_diff)
-            reward += 0.1 * cosine_similarity  # Scale the reward contribution
+            # 4) 의도한 '코사인 정렬' 보상
+            cos_align = float(np.clip(np.dot(f_curr, f_oracle), -1.0, 1.0))
+            cos_align = cos_align**5  # 보상 변화가 더 뚜렸하게 함.
+            # -1(정반대), 0(직교), 1(정렬)
+            reward += 0.1 * cos_align  # 스케일은 필요에 따라 튜닝
         else:
             reward = -0.05
 
@@ -1306,6 +1318,7 @@ def main():
 
     env.close()
 
+
 def oracle_test():
     env = LandingGimbalAviary(episode_len_sec=10, )
 
@@ -1334,5 +1347,174 @@ def oracle_test():
 
     env.close()
 
+
+def gimbal_env_test():
+    def _unit(v):
+        v = np.asarray(v, dtype=float)
+        n = np.linalg.norm(v)
+        return v if n == 0 else v / n
+
+    def _plot_vectors_3d(f_curr, f_oracle, rel_pos_world_norm=None, rgb=None, visibility=None):
+        """3D quiver(왼쪽) + 옵션: RGB 이미지(오른쪽) 나란히 표시.
+           rgb는 (1,H,W) 권장(필수는 아님). visibility가 주어지면 이미지 제목에 표시."""
+        f_curr = np.asarray(f_curr, dtype=float)
+        f_oracle = np.asarray(f_oracle, dtype=float)
+
+        # Determine axis limits from both vectors
+        vmax = float(np.max(np.abs(np.concatenate([f_curr, f_oracle]))))
+        vmax = 1.0 if vmax < 1e-9 else min(max(1.0, 1.1 * vmax), 1.5)
+
+        if rgb is None:
+            # 기존과 동일한 단일 3D 플롯
+            fig = plt.figure(figsize=(16, 14))
+            ax = fig.add_subplot(111, projection='3d')
+            ax_img = None
+        else:
+            # 3D(왼쪽) + 이미지(오른쪽) 나란히
+            fig = plt.figure(figsize=(20, 10))
+            gs = fig.add_gridspec(1, 2, width_ratios=[1.2, 1.0], wspace=0.15)
+            ax = fig.add_subplot(gs[0, 0], projection='3d')
+            ax_img = fig.add_subplot(gs[0, 1])
+
+            # --- RGB 준비: (1|3|4, H, W) -> (H, W, 3) ---
+            rgb_arr = np.asarray(rgb)
+            if rgb_arr.ndim != 3:
+                raise ValueError(f"`rgb`는 (C,H,W) 여야 합니다. 받은 shape={rgb_arr.shape}")
+
+            C = rgb_arr.shape[0]
+            if C == 1:
+                rgb_arr = np.repeat(rgb_arr, 3, axis=0)
+            elif C == 4:
+                rgb_arr = rgb_arr[:3, :, :]  # alpha drop
+            elif C != 3:
+                raise ValueError(f"`rgb`의 채널 수는 1/3/4만 지원합니다. 받은 C={C}")
+
+            img = np.moveaxis(rgb_arr, 0, -1)
+
+            # dtype 정리: 0~1 float이면 0~255로 스케일 후 uint8, 그 외엔 클리핑
+            if img.dtype != np.uint8:
+                vmax_img = float(np.nanmax(img))
+                if vmax_img <= 1.0:
+                    img_disp = np.clip(img, 0.0, 1.0)
+                    img_disp = (img_disp * 255.0).astype(np.uint8)
+                else:
+                    img_disp = np.clip(img, 0.0, 255.0).astype(np.uint8)
+            else:
+                img_disp = img
+
+            ax_img.imshow(img_disp)
+            ax_img.axis('off')
+            title_vis = f"env.rgb — visibility: {visibility:.3f}" if visibility is not None else "env.rgb"
+            ax_img.set_title(title_vis)
+
+        # --- 3D quiver ---
+        ax.quiver(0, 0, 0, f_curr[0], f_curr[1], f_curr[2], length=1.0, normalize=True, color='orange', label='curr')
+        ax.quiver(0, 0, 0, f_oracle[0], f_oracle[1], f_oracle[2], length=1.0, normalize=True, color='purple',
+                  label='oracle')
+
+        if rel_pos_world_norm is not None:
+            rel_pos_world_norm = np.asarray(rel_pos_world_norm, dtype=float)
+            ax.quiver(0, 0, 0, rel_pos_world_norm[0], rel_pos_world_norm[1], rel_pos_world_norm[2],
+                      length=1.0, normalize=True, color='cyan', label='rel_pos')
+
+        ax.set_xlim([-vmax, vmax])
+        ax.set_ylim([-vmax, vmax])
+        ax.set_zlim([-vmax, vmax])
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_title('Gimbal Forward (curr) vs Oracle Forward')
+
+        # Reference axes
+        ax.quiver(0, 0, 0, 1, 0, 0, length=1.0, normalize=True, color='r')  # +X
+        ax.quiver(0, 0, 0, 0, 1, 0, length=1.0, normalize=True, color='g')  # +Y
+        ax.quiver(0, 0, 0, 0, 0, 1, length=1.0, normalize=True, color='b')  # +Z
+
+        # 범례(필요시)
+        try:
+            ax.legend(loc='upper left')
+        except Exception:
+            pass
+
+        plt.tight_layout()
+        plt.show()
+
+    def compare_gimbal_to_oracle(env, show_plot=True):
+        """Numerically & visually compare oracle vs current gimbal forward vectors.
+
+        Args:
+            env: LandingGimbalAviary-like instance (already reset/stepped to a consistent state).
+            show_plot: whether to render a 3D plot.
+        Returns:
+            dict with 'cosine', 'angle_deg', 'visible', 'pixel', 'f_curr', 'f_oracle'.
+        """
+        # Set the current gimbal target consistent with your step convention (no env.step here)
+        gimbal_target = env.gimbal_target
+        assert gimbal_target.shape == (3,)
+        assert gimbal_target[1] < 1e-6, "Roll should be zero in this convention."
+
+        # Current forward (from your helper, same convention Rz(yaw) @ Ry(pitch))
+        f_curr = env._forward_from_norm_angles(gimbal_target)
+
+        # Oracle forward
+        oracle = env.compute_oracle_gimbal()
+        f_oracle = oracle['oracle_forward_local']
+        roll_f_oracle = oracle['angles_rad'][1]
+        assert abs(roll_f_oracle) < 1e-6, "Oracle roll should be zero in this convention."
+
+        # Metrics
+        cosine = float(np.clip(np.dot(_unit(f_curr), _unit(f_oracle)), -1.0, 1.0))
+        angle_deg = float(np.degrees(np.arccos(cosine)))
+
+        # Visibility (optional details)
+        vis, det = env.is_target_visible(return_details=True)
+        pixel = det.get('pixel', None) if isinstance(det, dict) else None
+
+        # Relative position vector between drone (not cam) and target (in world frame)
+        drone_position = np.asarray(env._getDroneStateVector(0)[0:3], dtype=float)
+        target_position = np.asarray(env._get_vehicle_position()[0], dtype=float)
+        rel_pos_world = target_position - drone_position
+        rel_pos_world_normalized = _unit(rel_pos_world)
+
+        print("\n[Gimbal vs Oracle Alignment]")
+        print(f"cosine alignment : {cosine: .6f}")
+        print(f"angle difference : {angle_deg: .3f} deg")
+        print(f"visible          : {vis}")
+        print(f"pixel estimate   : {pixel}")
+        print(f"f_curr           : {f_curr}")
+        print(f"f_oracle         : {f_oracle}")
+        print(f"rel_pos_world      : {rel_pos_world}")
+        print(f"rel_pos_world_norm    : {rel_pos_world_normalized}")
+
+        out = {
+            'cosine': cosine,
+            'angle_deg': angle_deg,
+            'visible': bool(vis),
+            'pixel': pixel,
+            'f_curr': np.asarray(f_curr, dtype=float),
+            'f_oracle': np.asarray(f_oracle, dtype=float),
+            'rel_pos_world_normalized': rel_pos_world_normalized,
+        }
+
+        if show_plot:
+            _plot_vectors_3d(out['f_curr'], out['f_oracle'], rel_pos_world_normalized, env.rgb, vis)
+
+        return out
+
+    env = LandingGimbalAviary(episode_len_sec=20, )
+    obs = env.reset()
+
+    for t in range(128):
+        action = np.array([0.06, 0.0, 0.01, 0.82, 0.0])  # Example action with pitch_norm = -1.0, yaw_norm = 0.0
+        obs, reward, done, _ = env.step(action)
+        if t % 8 == 0 or done:
+            result = compare_gimbal_to_oracle(env, show_plot=True)
+            print("\nStep", t)
+            print(reward, result['angle_deg'], result['visible'], result['pixel'])
+
+    env.close()
+
+
 if __name__ == "__main__":
-    oracle_test()
+    # oracle_test()
+    gimbal_env_test()
