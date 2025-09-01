@@ -348,8 +348,8 @@ def make_with_gimbal(name, frame_stack, action_repeat, seed):
     env = ExtendedTimeStepWrapper(env)
     return env
 
-def make_with_gimbal_oracle(name, frame_stack, action_repeat, seed):
-    env = gym.make(name)
+def make_with_gimbal_oracle(name, frame_stack, action_repeat, seed, env_config=None):
+    env = gym.make(name, **env_config) if env_config is not None else gym.make(name)
     env = FrameStackWrapperWithGimbalOracle(env, frame_stack)
     env = ExtendedTimeStepWrapper(env)
     return env
