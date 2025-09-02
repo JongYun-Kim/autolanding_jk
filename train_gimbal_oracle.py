@@ -48,10 +48,12 @@ class Workspace:
         # create logger
         self.logger = Logger(self.work_dir, use_tb=self.cfg.use_tb)
         # create envs
+        train_env = self.cfg.get("env.train", None)
+        eval_env = self.cfg.get("env.eval", None)
         self.train_env = dmc.make_with_gimbal_oracle(self.cfg.task_name, self.cfg.frame_stack,
-                                  self.cfg.action_repeat, self.cfg.seed, self.cfg.env.train)
+                                  self.cfg.action_repeat, self.cfg.seed, train_env)
         self.eval_env = dmc.make_with_gimbal_oracle(self.cfg.task_name, self.cfg.frame_stack,
-                                 self.cfg.action_repeat, self.cfg.seed, self.cfg.env.eval)
+                                 self.cfg.action_repeat, self.cfg.seed, eval_env)
 
         # create replay buffer
         data_specs = (self.train_env.observation_spec(),
