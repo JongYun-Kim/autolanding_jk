@@ -1083,14 +1083,24 @@ class LandingGimbalOracleAviary(LandingGimbalAviary):
     - [ ] Implement reward function that properly reflects LOS rewarding
     """
 
-    def __init__(self, is_noisy_gimbal=False, *args, **kwargs):
+    def __init__(self, is_noisy_gimbal=False, margin_size=None, *args, **kwargs):
         print("In [gym_pybullet_drones] LandingGimbalOracleAviary inits..$")
         super().__init__(*args, **kwargs)
 
         self.contain_in_frame = is_noisy_gimbal  # 기본: 기존과 동일하게 항상 중심 조준
-        for _ in range(32):
+        if self.contain_in_frame:
+            if margin_size is None:
+                self.contain_margin = 0.15  # 기본값
+            else:
+                self.contain_margin = margin_size  # 프레임 경계 여유(0~<1), contain 모드에서만 사용
+            assert 0.0 <= self.contain_margin < 1.0, "margin_size must be in [0,1)"
+        else:
+            if margin_size is not None:
+                for _ in range(64):
+                    print("[Warning] margin_size is ignored when contain_in_frame is False.")
+        for _ in range(16):
             print(f"noisy gimbal mode is {'ON' if is_noisy_gimbal else 'OFF'} !!!")
-        self.contain_margin = 0.15  # 프레임 경계 여유(0~<1), contain 모드에서만 사용
+            print(f"  margin size is {self.contain_margin} !!!")
 
         # 오라클에서 사용할 카메라 로컬 기준 벡터(전방/업방향)
         # 전방을 +x로 두고, 업을 +z로 두면 yaw(z)->pitch(y)로 자연스러운 pan-tilt가 가능
@@ -1139,8 +1149,10 @@ class LandingGimbalOracleAviary(LandingGimbalAviary):
         # 안전: 옵션 기본값 보장(기존 코드와 호환)
         if not hasattr(self, "contain_in_frame"):
             self.contain_in_frame = False
+            print("[Warning] contain_in_frame not set, default to False (center-oracle mode).")
         if not hasattr(self, "contain_margin"):
             self.contain_margin = 0.10
+            print("[Warning] contain_margin not set, default to 0.10.")
 
         # --- 1) 기하 준비 ---
         UGV_pos = np.array(self._get_vehicle_position()[0], dtype=np.float64)  # (3,)
