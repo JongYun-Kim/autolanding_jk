@@ -64,6 +64,9 @@ class CameraVisibilityChecker:
 
         # normalized image frame as shapely polygon
         self.img_poly = box(-1.0, -1.0, 1.0, 1.0)
+        self.img_area = float(self.img_poly.area)  # == 4.0
+
+        self.target_coverage = None
 
     @staticmethod
     def _normalize(v, fallback=None):
@@ -165,17 +168,21 @@ class CameraVisibilityChecker:
         """Compute camera-frame coordinates directly (for Z and frustum tests)."""
         return (R_wc @ (Pw - cam_pos[None, :]).T).T  # (N,3)
 
-    def is_visible(self, rect_xyz, cam_pos, cam_forward, cam_up):
+    def is_visible(self, rect_xyz, cam_pos, cam_forward, cam_up, min_fraction: float = 0.0):
         """
-        Returns True if any portion of the rectangle is visible within the camera frame.
+        Returns True if the rectangle covers at least `min_fraction` of the frame area.
+        - min_fraction: 프레임([-1,1]^2) 대비 최소 면적 비율(예: 0.01은 1%).
+          0일 때는 기존과 동일하게 '살짝 걸쳐도 보임'(선분 교차 포함)을 허용.
         """
+        self.target_coverage = -1
+
         rect_xyz = np.asarray(rect_xyz, dtype=np.float64).reshape(4,3)
         cam_pos = np.asarray(cam_pos, dtype=np.float64).reshape(3,)
         cam_forward = np.asarray(cam_forward, dtype=np.float64).reshape(3,)
         cam_up = np.asarray(cam_up, dtype=np.float64).reshape(3,)
 
         # 1) Validate and order the rectangle on its plane
-        rect_ordered, plane_normal = self._order_quad_on_plane(rect_xyz, self.eps_planar)
+        rect_ordered, _ = self._order_quad_on_plane(rect_xyz, self.eps_planar)
 
         # 2) Build extrinsics and depths
         rvec, tvec, R_wc = self._make_extrinsics(cam_pos, cam_forward, cam_up)
@@ -189,65 +196,74 @@ class CameraVisibilityChecker:
         # 3) Project (OpenCV)
         proj = self._project_points(rect_ordered, rvec, tvec)  # shape (4,2)
 
-        # 4) Clip against near/far by nudging points that are too close/behind
-        #    If an edge crosses the near plane, the *projection* will blow up; we must treat it as "partly visible".
-        if np.any(Z <= self.z_near):
-            # If any vertex is in front of the near plane, it's potentially visible.
-            # We'll conservatively continue; later polygon buffering will handle near-degenerate shapes.
-            pass
-
-        # 5) Build Shapely polygon for the projected quad (normalized image plane)
+        # 4) 2D 폴리곤 구성 및 수치 안정화
         poly2d = Polygon(proj)
         if not poly2d.is_valid:
             # Try fixing tiny self-intersections caused by numerical noise
             poly2d = poly2d.buffer(self.eps_buffer)
-        # If still invalid (extremely degenerate), downgrade to a line or point test
-        if not poly2d.is_valid:
-            # Explain (optional): explain_validity(poly2d)
-            # Fall back to using the outer boundary line (or points)
+
+        # 5) 면적 기반 판정 경로 (사각형이 폴리곤으로 유지되는 경우)
+        if poly2d.is_valid and poly2d.area >= self.eps_geom:
+            inter = poly2d.intersection(self.img_poly)
+            if inter.is_empty:
+                return False
+
+            # 면적 교집합이 존재하면 커버리지 계산
+            area = getattr(inter, "area", 0.0)
+            self.target_coverage = float(area / self.img_area) if area > 0.0 else 0.0
+
+            if min_fraction > 0.0:
+                # 최소 면적 기준 적용
+                return self.target_coverage >= float(min_fraction)
+            else:
+                # 기존 동작: 면적>0 이면 True, 아니면 길이(선분 교차)도 허용
+                if area > 0.0:
+                    return True
+                length = getattr(inter, "length", 0.0)
+                return (length is not None) and (length > 0.0)
+
+        # 6) 폴리곤이 선/점으로 붕괴된 경우 (근평면/왜곡 등)
+        #    min_fraction>0이면 면적 기준을 만족할 수 없으므로 바로 False.
+        if min_fraction > 0.0:
+            return False
+
+        # 기존 동작 유지: 선분 교차만 있어도 '보임'으로 간주
+        # poly2d.exterior가 없을 수 있으므로 좌표로 LineString 생성
+        try:
             coords = np.array(poly2d.exterior.coords) if poly2d.exterior else np.array(proj)
             if coords.shape[0] >= 2:
                 line = LineString(coords)
                 return line.buffer(self.eps_buffer).intersects(self.img_poly)
             else:
-                # Treat as a point
+                # 점 교차: 아주 미세한 버퍼로 포함 여부 판정
                 pt = proj.mean(axis=0)
-                return self.img_poly.buffer(0).contains(Polygon([pt, pt + [1e-12, 0], pt + [0, 1e-12]]))
-
-        # 6) Handle near-degenerate polygons (almost a segment) robustly
-        area = poly2d.area
-        if area < self.eps_geom:
-            # Buffer the tiny polygon slightly to make intersection well-defined
-            poly2d = poly2d.buffer(self.eps_buffer)
-
-        # 7) Intersection with normalized image frame [-1,1]^2
-        inter = poly2d.intersection(self.img_poly)
-        # Visible if intersection has positive area or non-empty geometry (area>0 or length>0)
-        if inter.is_empty:
-            return False
-        # For polygons/collections: any positive measure counts; for lines: length threshold
-        try:
-            if hasattr(inter, "area") and inter.area > 0.0:
-                return True
-            if hasattr(inter, "length") and inter.length > 0.0:
-                return True
+                tiny = Polygon([pt, pt + [1e-12, 0], pt + [0, 1e-12]])
+                return self.img_poly.buffer(0).contains(tiny)
         except Exception:
-            pass
-        return False
+            return False
 
 
 if __name__ == "__main__":
-    checker = CameraVisibilityChecker(fov_deg=90.0, aspect=16 / 9)
+    checker = CameraVisibilityChecker(fov_deg=90.0, aspect=1)
 
     rect = np.array([
-        [1.0, -1.0, 5.0],
-        [1.0, 1.0, 5.0],
-        [-1.0, 1.0, 5.0],
-        [-1.0, -1.0, 5.0],
+        [ 1.0, -1.0,  0.0],
+        [ 1.0,  1.0,  0.0],
+        [-1.0,  1.0,  0.0],
+        [-1.0, -1.0,  0.0],
     ])
-    cam_pos = np.array([0.0, 0.0, 0.0])
-    cam_forward = np.array([0.0, 0.0, 1.0])
+    # rect = np.array([
+    #     [-1.0, -1.0,  0.0],
+    #     [-1.0,  1.0,  0.0],
+    #     [ 1.0,  1.0,  0.0],
+    #     [ 1.0, -1.0,  0.0],
+    # ])
+    cam_pos = np.array([0.0, 0.0, 2.0])
+    cam_forward = np.array([0.0, 0.0, -1.0])
     cam_up = np.array([0.0, 1.0, 0.0])
 
-    visible = checker.is_visible(rect, cam_pos, cam_forward, cam_up)
+    visible = checker.is_visible(rect, cam_pos, cam_forward, cam_up, min_fraction=0.1)
     print("visible:", visible)
+    print("coverage:", checker.target_coverage)
+
+    print("...stop!")
