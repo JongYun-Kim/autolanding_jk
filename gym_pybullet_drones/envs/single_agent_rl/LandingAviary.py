@@ -68,6 +68,10 @@ class LandingAviary(BaseSingleAgentAviary):
                          act=act,
                          episode_len_sec=episode_len_sec,
                          )
+
+        self.num_step_repeats = 4
+        self.IMG_CAPTURE_FREQ = self.AGGR_PHY_STEPS * self.num_step_repeats
+        self.IMG_FRAME_PER_SEC = self.SIM_FREQ / self.IMG_CAPTURE_FREQ
     
     def video_camera(self):
         nth_drone = 0
@@ -234,14 +238,6 @@ class LandingAviary(BaseSingleAgentAviary):
         return combined_reward
 
     def _computeDone(self):
-        """Computes the current done value.
-
-        Returns
-        -------
-        bool
-            Whether the current episode is done.
-
-        """
         if p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ():
             drone_altitude = self._getDroneStateVector(0)[2]
             if drone_altitude >= 0.275:
@@ -249,7 +245,7 @@ class LandingAviary(BaseSingleAgentAviary):
             else:
                 print('_computeDone: Crashed!')
             return True
-        if self.step_counter/self.SIM_FREQ > self.EPISODE_LEN_SEC:
+        if self.step_counter >= self.EPISODE_LEN_SEC * self.SIM_FREQ:
             print("_computeDone: TimeOut!")
             return True
         else:
@@ -560,7 +556,7 @@ class ReflectiveToddlerLandingAviary(ToddlerLandingAviary):
         r_list = [r_vis_only, r_vis_n_lc, r_full]  # Retrieve the rewards for reflective learning in replay buffer
         self.r_list = np.array(r_list)
 
-        # TODO: Check if the replay buffer takes which reward during training: scalar (r_xx) or array (r_list)
+        # Note: Check if the replay buffer takes which reward during training: scalar (r_xx) or array (r_list)
         if self.difficulty == 1:
             return r_vis_only
         elif self.difficulty == 2:
@@ -1436,6 +1432,9 @@ def main():
 
         print(f"step {t+1} gimbal_euler [deg]: yaw={yaw:.2f}, pitch={pitch:.2f}, roll={roll:.2f}; quat: {quat}")
         print(f"  Target Visibility: {env.is_target_visible()}; Reward: {rew:.3f}")
+
+        # print(f"step {t+1}: step counter={env.step_counter}")
+        # show_rgb(env.rgb)
 
         if t % 5 == 0:
             show_rgb(env.rgb)
