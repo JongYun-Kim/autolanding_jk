@@ -1,12 +1,13 @@
 import numpy as np
 from gym import spaces
+import pybullet as p
 
 from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics, BaseAviary, ImageType
 from gym_pybullet_drones.envs.single_agent_rl.BaseSingleAgentAviary import ActionType, ObservationType, BaseSingleAgentAviary
-import pybullet as p
 from gym_pybullet_drones.utils.specs import BoundedArray
-
 from gym_pybullet_drones.utils.utils import rgb2gray
+from gym_pybullet_drones.utils.camera_visibility_checker import CameraVisibilityChecker
+
 import inspect
 from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
@@ -661,6 +662,8 @@ class LandingGimbalAviary(LandingAviary):
     - [o] Expand the observation space to include gimbal angles
     - [o] Implement the gimbal control logic in the step or get_obs 
     - [o] Design a reward function to keep the gimbal pointing the ground vehicle
+    - [o] Add a visibility checker to see if the ground vehicle is in the camera's FOV (margin included)
+    - [ ] Check if IMG_CAPTURE_FREQ is properly set !!!!!!! Zebra
     """
     def __init__(self,
                  drone_model: DroneModel=DroneModel.CF2X,
@@ -680,12 +683,16 @@ class LandingGimbalAviary(LandingAviary):
 
         self._cam_dir_local = np.array([1.0, 0.0, 0.0], dtype=np.float32)  # camera forward (+x)
         self._cam_up_local = np.array([0.0, 0.0, 1.0], dtype=np.float32)  # camera up (+z)
-        self._cam_offset_local = np.array([0.0, 0.0, -0.05], dtype=np.float32)  # 아래로 5cm
+        self._cam_offset_local = np.array([0.0, 0.0, -0.0034], dtype=np.float32)  # 아래로 약간 오프셋
+
+        self._cam_fwd_world = None
+        self._cam_up_world = None
+        self._cam_pos_world = None
 
         # FOV/프로젝션 (오라클과 동일하게)
         self._fov_deg = 85.7
         self._near = 0.03
-        self._far = 200.0
+        self._far = 100.0
         self._aspect = 1.0
 
         # Angles: [pitch,  roll,  yaw]
@@ -702,6 +709,14 @@ class LandingGimbalAviary(LandingAviary):
 
         # gimbal_state_quat: current gimbal angles in quaternion format
         self.gimbal_state_quat = None
+
+        # Visibility checker
+        margin_deg_in_checker = 2.0  # margin to avoid checking at the very edge of FOV
+        margin_deg_in_checker = np.clip(margin_deg_in_checker, 0.0, min(self._fov_deg / 2, self._fov_deg / 2 * self._aspect) - 1e-2)
+        fov_deg_in_checker = self._fov_deg - (2 * margin_deg_in_checker)
+        self.min_viz_ratio_in_checker = 0.0014  # minimum visible ratio to consider the target visible 3*3 in 80*80
+        self.min_viz_ratio_in_checker = np.clip(self.min_viz_ratio_in_checker, 0.0, 1.0)
+        self.visibility_checker = CameraVisibilityChecker(fov_deg=fov_deg_in_checker, aspect=self._aspect)
 
         super().__init__(drone_model=drone_model,
                          initial_xyzs=initial_xyzs,
@@ -800,6 +815,9 @@ class LandingGimbalAviary(LandingAviary):
         cam_pos_world = np.array(drone_pos) + rot_drone @ self._cam_offset_local
         cam_dir_world = rot_drone @ (gimbal_rot_local @ self._cam_dir_local)
         cam_up_world = rot_drone @ (gimbal_rot_local @ self._cam_up_local)
+        self._cam_fwd_world = cam_dir_world
+        self._cam_up_world = cam_up_world
+        self._cam_pos_world = cam_pos_world
 
         target_world = cam_pos_world + cam_dir_world * 1000.0
 
@@ -900,7 +918,47 @@ class LandingGimbalAviary(LandingAviary):
 
         return {'quat': quat, 'angles_rad': angles_rad, 'angles_norm': angles_norm, 'oracle_forward_local': f_local}
 
-    def is_target_visible(self, margin_deg=0.0, return_details=False):
+    def is_target_visible(self):
+
+        # Pad
+        pad_pos = np.array(self._get_vehicle_position()[0])
+        pad_hf = 0.2875 #2875gives0.1margin  # Helipad - visual shape: (0.675, 0.675, 0), collision shape: (0.5, 0.5, 0)
+        pad_corners = np.array([
+            [ pad_hf,  pad_hf, 0.0],
+            [ pad_hf, -pad_hf, 0.0],
+            [-pad_hf, -pad_hf, 0.0],
+            [-pad_hf,  pad_hf, 0.0],
+        ]) + pad_pos
+
+        # Drone
+        drone_pos = self.pos[0, :].astype(np.float64)
+        drone_quat = self.quat[0, :]
+        rot_drone = np.array(p.getMatrixFromQuaternion(drone_quat)).reshape(3, 3).astype(np.float64)
+
+        # Camera
+        pitch_rad, _, yaw_rad = self._norm_to_rad(self.gimbal_target)
+        R_local = self._gimbal_rot_from_angles(pitch_rad, 0.0, yaw_rad)
+        cam_pos_world = drone_pos + rot_drone @ self._cam_offset_local
+        cam_fwd_world = rot_drone @ (R_local @ self._cam_dir_local)
+        cam_up_world = rot_drone @ (R_local @ self._cam_up_local)
+
+        # Debugging: camera pos, fwd, up (check cam_ and self._cam_ are close enough)
+        # Note: should be disabled because later self._cam_* are only updated when _getDroneImages is called
+        assert np.linalg.norm(cam_pos_world - self._cam_pos_world) < 1e-3, f"cam_pos_world mismatch {cam_pos_world} vs {self._cam_pos_world}"
+        assert np.linalg.norm(cam_fwd_world - self._cam_fwd_world) < 1e-4, f"cam_fwd_world mismatch {cam_fwd_world} vs {self._cam_fwd_world}"
+        assert np.linalg.norm(cam_up_world - self._cam_up_world) < 1e-4, f"cam_up_world mismatch {cam_up_world} vs {self._cam_up_world}"
+
+        # Visibility
+        visibility = self.visibility_checker.is_visible(
+            rect_xyz=pad_corners,
+            cam_pos=cam_pos_world,
+            cam_forward=cam_fwd_world,
+            cam_up=cam_up_world,
+            min_fraction=self.min_viz_ratio_in_checker,
+        )
+        return visibility
+
+    def is_target_visible_og(self, margin_deg=0.0, return_details=False):
         """
         현재 짐벌 상태/카메라 파라미터에서 UGV가 프레임 내에 있는지 판정.
         - margin_deg: 여유각(양수면 더 엄격한 프레임 내 판정)
@@ -1356,18 +1414,19 @@ def show_rgb(rgb):
 
 
 def main():
-    env = LandingGimbalOracleAviary(episode_len_sec=20, is_noisy_gimbal=True)
-    # env = LandingGimbalAviary(episode_len_sec=10, )
+    # env = LandingGimbalOracleAviary(episode_len_sec=20, is_noisy_gimbal=True)
+    env = LandingGimbalAviary(episode_len_sec=10, )
 
     obs = env.reset()
     print("reset gimbal_state_quat:", getattr(env, "gimbal_state_quat", None))
+    print(f"  Target Visibility: {env.is_target_visible()}")
     show_rgb(env.rgb)
 
     # 몇 스텝 전진/무작위 속도 명령으로 진행해 보며 계속 패드를 가운데에 두는지 확인
     for t in range(128):
         # 예: 전진살짝 + 고도유지
-        action = np.array([0.0, 0.0, 0.01], dtype=np.float32)
-        # action = np.array([0.0, 0.0, 0.01, 1, 0], dtype=np.float32)
+        # action = np.array([0.0, 0.0, 0.01], dtype=np.float32)
+        action = np.array([0.0, 0.0, 0.01, 0.95, 0], dtype=np.float32)
         obs, rew, done, info = env.step(action)
 
         # 쿼터니안 → 오일러 (yaw, pitch, roll)
@@ -1376,10 +1435,11 @@ def main():
         yaw, pitch, roll = euler  # 'zyx' 이므로 [yaw, pitch, roll] 순서
 
         print(f"step {t+1} gimbal_euler [deg]: yaw={yaw:.2f}, pitch={pitch:.2f}, roll={roll:.2f}; quat: {quat}")
+        print(f"  Target Visibility: {env.is_target_visible()}; Reward: {rew:.3f}")
 
         if t % 5 == 0:
             show_rgb(env.rgb)
-            print(env.is_target_visible())
+            # print(env.is_target_visible())
         if done:
             break
 

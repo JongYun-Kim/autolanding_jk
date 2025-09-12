@@ -291,29 +291,32 @@ if __name__ == "__main__":
 
     print("\n[Additional Manual Test]")
     print("Testing the exact scenario from the problem:")
-    checker = CameraVisibilityChecker(fov_deg=57.52878, aspect=1)
+    checker = CameraVisibilityChecker(fov_deg=81.7, aspect=1)
 
     rect = np.array([
-        [ 1.0, -1.0,  0.0],
-        [ 1.0,  1.0,  0.0],
-        [-1.0,  1.0,  0.0],
-        [-1.0, -1.0,  0.0],
+        [ 0.25, -0.25,  0.0],
+        [ 0.25,  0.25,  0.0],
+        [-0.25,  0.25,  0.0],
+        [-0.25, -0.25,  0.0],
     ])
 
-    # cam_pos = np.array([0.0, 0.0, 2.0])
-    # cam_forward = np.array([0.0, 0.0, -1.0])
-    # cam_up = np.array([0.0, 1.0, 0.0])
+    cam_pos = np.array([0.0, 0.0, 1.616])
+    cam_forward = np.array([0.0, 0.0, -1.0])
+    cam_up = np.array([0.0, 1.0, 0.0])
 
-    cam_pos = np.array([-np.sqrt(2), -np.sqrt(2), 2])
-    cam_forward = checker._normalize(np.array([np.sqrt(2), np.sqrt(2), -2]))  # 원점을 바라보도록
-    cam_up = np.array([np.sqrt(2), np.sqrt(2), 0.0])
+    # cam_pos = np.array([-np.sqrt(2), -np.sqrt(2), 2])
+    # cam_forward = checker._normalize(np.array([np.sqrt(2), np.sqrt(2), -2]))  # 원점을 바라보도록
+    # cam_up = np.array([np.sqrt(2), np.sqrt(2), 0.0])
 
-    visible = checker.is_visible(rect, cam_pos, cam_forward, cam_up, min_fraction=0.1)
+    visible = checker.is_visible(rect, cam_pos, cam_forward, cam_up, min_fraction=0.0014)
     print(f"\nFinal Result:")
     print(f"  visible: {visible} (Expected: True)")
-    print(f"  coverage: {checker.target_coverage:.4f} (Expected: 0.1010)")
+    print(f"  coverage: {checker.target_coverage * 100:.6f}\% (Expected: 10.10)")
 
-    if visible and abs(checker.target_coverage - 0.1010) < 0.01:
+    expect_coverage = 0.1010
+    precision = 0.01
+
+    if visible and abs(checker.target_coverage - expect_coverage) < precision:
         print("\n✓ SUCCESS: The script now works correctly!")
     else:
         print("\n✗ There may still be an issue.")
