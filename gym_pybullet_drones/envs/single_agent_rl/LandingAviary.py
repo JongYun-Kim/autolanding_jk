@@ -677,8 +677,8 @@ class LandingGimbalAviary(LandingAviary):
         """Initialization of a single agent RL environment with gimbal control."""
         print("In [gym_pybullet_drones] LandingGimbalAviary inits..$")
 
-        self._cam_dir_local = np.array([1.0, 0.0, 0.0], dtype=np.float32)  # camera forward (+x)
-        self._cam_up_local = np.array([0.0, 0.0, 1.0], dtype=np.float32)  # camera up (+z)
+        self._cam_dir_local = np.array([0.0, 0.0, -1.0], dtype=np.float32)  # camera forward (-z)
+        self._cam_up_local  = np.array([1.0, 0.0, 0.0], dtype=np.float32)   # camera up (+x)
         self._cam_offset_local = np.array([0.0, 0.0, -0.0034], dtype=np.float32)  # 아래로 약간 오프셋
 
         self._cam_fwd_world = None
@@ -694,13 +694,14 @@ class LandingGimbalAviary(LandingAviary):
         # Angles: [pitch,  roll,  yaw]
         # gimbal_target: target gimbal angles in normalized [-1, 1] range
         self.gimbal_target = None  # action[3:]
-        self.initial_gimbal_target = np.array([1.0, 0.0, 0.0])  # camera pointing down, no roll, no yaw
+        self.initial_gimbal_target = np.array([-1.0, 0.0, 0.0])  # camera pointing down, no roll, no yaw
 
         # Gimbal specs
-        self.gimbal_angle_ranges = np.array([  # (3,2)
-            [0       , np.pi/2],  # Pitch: 0    to 90  degrees
-            [-np.pi/4, np.pi/4],  # Roll : -45  to 45  degrees
-            [-np.pi  , np.pi  ]   # Yaw  : -180 to 180 degrees
+        eps = 1e-6
+        self.gimbal_angle_ranges = np.array([       # (3,2)
+            [0        +eps  ,  (5*np.pi/19)-0.004 -eps],  # Pitch :  0 (down) to 50-ish degrees (no horizon at hovering)
+            [-np.pi/4.      ,  np.pi/4                ],  # Roll  : -45       to 45     degrees
+            [-np.pi  + eps  ,  np.pi              -eps],  # Yaw   : -180      to 180    degrees
         ], dtype=np.float32)  # Ranges for gimbal angles in radians
 
         # gimbal_state_quat: current gimbal angles in quaternion format
@@ -775,9 +776,9 @@ class LandingGimbalAviary(LandingAviary):
             [0, 0, 1]
         ], dtype=np.float32)
         pitch_rot = np.array([
-            [np.cos(pitch_rad), 0, np.sin(pitch_rad)],
+            [np.cos(pitch_rad), 0, -np.sin(pitch_rad)],
             [0, 1, 0],
-            [-np.sin(pitch_rad), 0, np.cos(pitch_rad)]
+            [np.sin(pitch_rad), 0, np.cos(pitch_rad)]
         ], dtype=np.float32)
         # roll은 0으로 두므로 별도 회전 불가피시 np.eye 사용
         return yaw_rot @ pitch_rot
@@ -1411,7 +1412,7 @@ def show_rgb(rgb):
 
 def main():
     # env = LandingGimbalOracleAviary(episode_len_sec=20, is_noisy_gimbal=True)
-    env = LandingGimbalAviary(episode_len_sec=10, )
+    env = LandingGimbalAviary(episode_len_sec=6, )
 
     obs = env.reset()
     print("reset gimbal_state_quat:", getattr(env, "gimbal_state_quat", None))
@@ -1422,7 +1423,7 @@ def main():
     for t in range(128):
         # 예: 전진살짝 + 고도유지
         # action = np.array([0.0, 0.0, 0.01], dtype=np.float32)
-        action = np.array([0.0, 0.0, 0.01, 0.95, 0], dtype=np.float32)
+        action = np.array([0.0, 0.0, 0.01, -1, (-1+(t/18))], dtype=np.float32)
         obs, rew, done, info = env.step(action)
 
         # 쿼터니안 → 오일러 (yaw, pitch, roll)
@@ -1436,7 +1437,7 @@ def main():
         # print(f"step {t+1}: step counter={env.step_counter}")
         # show_rgb(env.rgb)
 
-        if t % 5 == 0:
+        if t % 6 == 0:
             show_rgb(env.rgb)
             # print(env.is_target_visible())
         if done:
