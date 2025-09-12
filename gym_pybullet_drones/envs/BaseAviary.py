@@ -163,8 +163,9 @@ class BaseAviary(gym.Env):
             ##parameter for distortion
             self.IMG_RES_org = [84, 84]
 
-            self.IMG_FRAME_PER_SEC = 5
-            self.IMG_CAPTURE_FREQ = int(self.SIM_FREQ/self.IMG_FRAME_PER_SEC)
+            self.num_step_repeats = None
+            self.IMG_FRAME_PER_SEC = None
+            self.IMG_CAPTURE_FREQ = None
             self.rgb = np.zeros(((self.NUM_DRONES, 4, self.IMG_RES[0], self.IMG_RES[0])))
             self.dep = np.ones(((self.NUM_DRONES, self.IMG_RES[1], self.IMG_RES[0])))
             self.seg = np.zeros(((self.NUM_DRONES, self.IMG_RES[1], self.IMG_RES[0])))
@@ -666,7 +667,7 @@ class BaseAviary(gym.Env):
                             targetPosition=self.steering,
                             force=20,
                             physicsClientId=self.CLIENT)
-        for ii in range(0,4):
+        for ii in range(0, self.num_step_repeats):
             """Advances the environment by one simulation step.
             
             Parameters
@@ -692,7 +693,7 @@ class BaseAviary(gym.Env):
 
             """
             # Save PNG video frames if RECORD=True and GUI=False
-            self.AGGR_PHY_STEPS = self.AGGR_PHY_STEPS_original + random.randint(-2,2)
+            self.AGGR_PHY_STEPS = self.AGGR_PHY_STEPS_original #+ random.randint(-2,2)
             if self.RECORD and not self.GUI and self.step_counter%self.CAPTURE_FREQ == 0:
                 [w, h, rgb, _, _] = p.getCameraImage(width=self.VID_WIDTH,
                                                         height=self.VID_HEIGHT,
