@@ -33,6 +33,8 @@ class CameraVisibilityChecker:
             raise ValueError(f"aspect must be positive finite, got {aspect}")
         self.aspect = float(aspect)
 
+        self.fov_deg = fov_deg
+        self.is_fov_deg_vertical = fov_is_vertical
         fov = np.deg2rad(float(fov_deg))
         half_min = 1e-6
         half_max = np.pi/2 - 1e-6
@@ -133,23 +135,28 @@ class CameraVisibilityChecker:
         """
         f = CameraVisibilityChecker._normalize(cam_forward)
         up = CameraVisibilityChecker._normalize(cam_up)
-        # Fix near-parallel up
-        if np.linalg.norm(np.cross(f, up)) < 1e-8:
-            # pick an alternate up
-            alt = np.array([0.0, 1.0, 0.0]) if abs(f[2]) < 0.9 else np.array([1.0, 0.0, 0.0])
+
+        # up과 f가 거의 평행이면 대체 up 사용
+        if np.linalg.norm(np.cross(up, f)) < 1e-8:
+            # f와 거의 평행하지 않은 축을 골라 up 대체
+            alt = np.array([0.0, 1.0, 0.0]) if abs(f[1]) < 0.9 else np.array([1.0, 0.0, 0.0])
             up = CameraVisibilityChecker._normalize(alt)
 
-        r = CameraVisibilityChecker._normalize(np.cross(f, up))   # right
-        u = np.cross(r, f)                                        # true up, orthonormal
+        # ***중요***: 오른손 좌표계 보장***
+        r = CameraVisibilityChecker._normalize(np.cross(up, f))  # right = up × f
+        u = CameraVisibilityChecker._normalize(np.cross(f, r))  # true up = f × r
 
-        # world->cam rotation: rows are cam axes in world basis
-        R_wc = np.stack([r, u, f], axis=0)  # 3x3
-        # OpenCV expects rvec/tvec such that X_cam = R * (X_world - C)
-        t = -R_wc @ cam_pos.reshape(3,)
+        R_wc = np.stack([r, u, f], axis=0)  # world->cam
+        # 수치 문제 대비: det이 음수면 r 뒤집어 교정
+        if np.linalg.det(R_wc) < 0:
+            r = -r
+            R_wc = np.stack([r, u, f], axis=0)
+        # R_wc가 proper rotation인지 확인
+        assert np.isclose(np.linalg.det(R_wc), 1.0, atol=1e-6), "R_wc is not a proper rotation (det != +1)."
 
-        # Rodrigues vector
+        t = -R_wc @ cam_pos.reshape(3, )
         rvec, _ = cv2.Rodrigues(R_wc.astype(np.float64))
-        tvec = t.reshape(3,1).astype(np.float64)
+        tvec = t.reshape(3, 1).astype(np.float64)
         return rvec, tvec, R_wc
 
     def _project_points(self, Pw, rvec, tvec):
@@ -258,11 +265,11 @@ if __name__ == "__main__":
     #     [ 1.0,  1.0,  0.0],
     #     [ 1.0, -1.0,  0.0],
     # ])
-    cam_pos = np.array([0.0, 0.0, 2.0])
+    cam_pos = np.array([0.0, 0.0, 3.0])
     cam_forward = np.array([0.0, 0.0, -1.0])
     cam_up = np.array([0.0, 1.0, 0.0])
 
-    visible = checker.is_visible(rect, cam_pos, cam_forward, cam_up, min_fraction=0.1)
+    visible = checker.is_visible(rect, cam_pos, cam_forward, cam_up, min_fraction=0.02)
     print("visible:", visible)
     print("coverage:", checker.target_coverage)
 
