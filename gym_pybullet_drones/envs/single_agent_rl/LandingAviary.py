@@ -698,10 +698,15 @@ class LandingGimbalAviary(LandingAviary):
 
         # Gimbal specs
         eps = 1e-6
+        # self.gimbal_angle_ranges = np.array([       # (3,2)
+        #     [0        +eps  ,  (5*np.pi/19)-0.004 -eps],  # Pitch :  0 (down) to 50-ish degrees (no horizon at hovering)
+        #     [-np.pi/4.      ,  np.pi/4                ],  # Roll  : -45       to 45     degrees
+        #     [-np.pi  + eps  ,  np.pi              -eps],  # Yaw   : -180      to 180    degrees
+        # ], dtype=np.float32)  # Ranges for gimbal angles in radians
         self.gimbal_angle_ranges = np.array([       # (3,2)
-            [0        +eps  ,  (5*np.pi/19)-0.004 -eps],  # Pitch :  0 (down) to 50-ish degrees (no horizon at hovering)
-            [-np.pi/4.      ,  np.pi/4                ],  # Roll  : -45       to 45     degrees
-            [-np.pi  + eps  ,  np.pi              -eps],  # Yaw   : -180      to 180    degrees
+            [-(5*np.pi/19)+0.004  +eps, (5*np.pi/19)-0.004 -eps],  # Pitch : +-50-ish degrees (no horizon at hovering)
+            [-np.pi/4.                , np.pi/4                ],  # Roll  :  -45  to 45     degrees
+            [-np.pi/2             +eps, np.pi/2            -eps],  # Yaw   :  -180 to 180    degrees
         ], dtype=np.float32)  # Ranges for gimbal angles in radians
 
         # gimbal_state_quat: current gimbal angles in quaternion format
@@ -1423,7 +1428,7 @@ def main():
     for t in range(128):
         # 예: 전진살짝 + 고도유지
         # action = np.array([0.0, 0.0, 0.01], dtype=np.float32)
-        action = np.array([0.0, 0.0, 0.01, -1, (-1+(t/18))], dtype=np.float32)
+        action = np.array([0.0, 0.0, 0.01, 0, (-1+(t/18))], dtype=np.float32)
         obs, rew, done, info = env.step(action)
 
         # 쿼터니안 → 오일러 (yaw, pitch, roll)
