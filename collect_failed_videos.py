@@ -5,8 +5,8 @@ import numpy as np
 from omegaconf import OmegaConf
 import torch
 # from train_toddler import Workspace
-from train_gimbal_oracle import Workspace
-# from train_gimbal import Workspace
+# from train_gimbal_oracle import Workspace
+from train_gimbal import Workspace
 # from train import Workspace
 from video import VideoRecorder  # for recording evaluation videos
 import csv
@@ -183,7 +183,7 @@ def my_tests(cfg):
 
 
 def setup_exp():
-    num_episodes = 200
+    num_episodes = 24
 
     experiment_settings = [
         # {
@@ -215,9 +215,33 @@ def setup_exp():
         #     "num_episodes": num_episodes,
         #     "snapshot_name": "snapshot_bk_2270k.pt",
         # },
+        # {
+        #     "model_type": "drqv2-base-250819",
+        #     "target_dir": "/home/user/landing/exp_local/2025.08.19/192507_seed=42/",
+        #     "num_episodes": num_episodes,
+        #     "snapshot_name": "snapshot.pt",
+        # },
+        # {
+        #     "model_type": "drqv2-oracle-gimbal-w-viz-rwd-1235k",
+        #     "target_dir": "/home/user/landing/exp_local/2025.09.01/001943_/",
+        #     "num_episodes": num_episodes,
+        #     "snapshot_name": "snapshot_bk_1235k.pt",
+        # },
+        # {
+        #     "model_type": "drqv2-oracle-gimbal-w-viz-rwd-1750k",
+        #     "target_dir": "/home/user/landing/exp_local/2025.09.01/001943_/",
+        #     "num_episodes": num_episodes,
+        #     "snapshot_name": "snapshot_bk_1750k.pt",
+        # },
+        # {
+        #     "model_type": "drqv2-oracle-gimbal-w-noise-3914k",
+        #     "target_dir": "/home/user/landing/exp_local/2025.09.01/001723_env.eval.is_noisy_gimbal=True,env.train.is_noisy_gimbal=True/",
+        #     "num_episodes": num_episodes,
+        #     "snapshot_name": "snapshot_3914k_for_test.pt",
+        # },
         {
-            "model_type": "drqv2-base-250819",
-            "target_dir": "/home/user/landing/exp_local/2025.08.19/192507_seed=42/",
+            "model_type": "drqv2--gimbal-7m",
+            "target_dir": "/home/user/landing/exp_local/2025.08.30/111223_/",
             "num_episodes": num_episodes,
             "snapshot_name": "snapshot.pt",
         },

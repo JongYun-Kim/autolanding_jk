@@ -200,13 +200,6 @@ class Workspace:
         with snapshot.open('wb') as f:
             torch.save(payload, f)
 
-    # def load_snapshot(self):
-    #     snapshot = self.work_dir / 'snapshot.pt'
-    #     with snapshot.open('rb') as f:
-    #         payload = torch.load(f)
-    #     for k, v in payload.items():
-    #         self.__dict__[k] = v
-
     def load_snapshot(self, checkpoint_dir=None):
         if checkpoint_dir is None:
             snapshot = self.work_dir / 'snapshot.pt'
@@ -222,10 +215,13 @@ class Workspace:
 def main(cfg):
     root_dir = Path.cwd()
     workspace = Workspace(cfg)
-    snapshot = root_dir / 'snapshot.pt'
-    if snapshot.exists():
-        print(f'resuming: {snapshot}')
-        workspace.load_snapshot()
+    if getattr(cfg, "checkpoint_dir", None):
+        workspace.load_snapshot(cfg.checkpoint_dir)
+    else:
+        snapshot = root_dir / 'snapshot.pt'
+        if snapshot.exists():
+            print(f'resuming: {snapshot}')
+            workspace.load_snapshot()
     workspace.train()
 
 

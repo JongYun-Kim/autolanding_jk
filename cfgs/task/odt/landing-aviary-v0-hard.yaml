@@ -1,0 +1,6 @@
+defaults:
+  - hard
+  - _self_
+
+task_name: landing-aviary-v0
+stddev_schedule: 'linear(1.0,0.05,3000000)'

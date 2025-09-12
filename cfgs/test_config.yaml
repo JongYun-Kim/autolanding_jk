@@ -1,7 +1,8 @@
 defaults:
   - _self_
 #  - task@_global_: landing-aviary-v0-toddler
-  - task@_global_: landing-aviary-v0-gimbal-oracle
+#  - task@_global_: landing-aviary-v0-gimbal-oracle
+  - task@_global_: landing-aviary-v0-gimbal
 #  - task@_global_: landing-aviary-v0
   - override hydra/launcher: submitit_local
 
@@ -48,6 +49,14 @@ agent:
   feature_dim: ${feature_dim}
   stddev_schedule: ${stddev_schedule}
   stddev_clip: 0.3
+
+#env:
+#  train:
+#    is_noisy_gimbal: False
+#    margin_size: None
+#  eval:
+#    is_noisy_gimbal: False
+#    margin_size: None
 
 hydra:
   run:
