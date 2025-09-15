@@ -659,7 +659,7 @@ class LandingGimbalAviary(LandingAviary):
     - [o] Implement the gimbal control logic in the step or get_obs 
     - [o] Design a reward function to keep the gimbal pointing the ground vehicle
     - [o] Add a visibility checker to see if the ground vehicle is in the camera's FOV (margin included)
-    - [ ] Check if IMG_CAPTURE_FREQ is properly set !!!!!!! Zebra
+    - [o] Check if IMG_CAPTURE_FREQ is properly set !!!!!!! Zebra
     """
     def __init__(self,
                  drone_model: DroneModel=DroneModel.CF2X,
@@ -944,11 +944,11 @@ class LandingGimbalAviary(LandingAviary):
         cam_fwd_world = rot_drone @ (R_local @ self._cam_dir_local)
         cam_up_world = rot_drone @ (R_local @ self._cam_up_local)
 
-        # Debugging: camera pos, fwd, up (check cam_ and self._cam_ are close enough)
-        # Note: should be disabled because later self._cam_* are only updated when _getDroneImages is called
-        assert np.linalg.norm(cam_pos_world - self._cam_pos_world) < 1e-3, f"cam_pos_world mismatch {cam_pos_world} vs {self._cam_pos_world}"
-        assert np.linalg.norm(cam_fwd_world - self._cam_fwd_world) < 1e-4, f"cam_fwd_world mismatch {cam_fwd_world} vs {self._cam_fwd_world}"
-        assert np.linalg.norm(cam_up_world - self._cam_up_world) < 1e-4, f"cam_up_world mismatch {cam_up_world} vs {self._cam_up_world}"
+        # # Debugging: camera pos, fwd, up (check cam_ and self._cam_ are close enough)
+        # # Note: should be disabled because later self._cam_* are only updated when _getDroneImages is called
+        # assert np.linalg.norm(cam_pos_world - self._cam_pos_world) < 1e-3, f"cam_pos_world mismatch {cam_pos_world} vs {self._cam_pos_world}"
+        # assert np.linalg.norm(cam_fwd_world - self._cam_fwd_world) < 1e-4, f"cam_fwd_world mismatch {cam_fwd_world} vs {self._cam_fwd_world}"
+        # assert np.linalg.norm(cam_up_world - self._cam_up_world) < 1e-4, f"cam_up_world mismatch {cam_up_world} vs {self._cam_up_world}"
 
         # Visibility
         visibility = self.visibility_checker.is_visible(
