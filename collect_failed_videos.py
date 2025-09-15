@@ -39,7 +39,7 @@ def evaluate_workspace(workspace, model_type: str, num_episodes: int = 128):
         video_recorder.init_with_frame(workspace.eval_env, enabled=True)
 
         while not time_step.last():
-            with torch.no_grad(), torch.cuda.amp.autocast(enabled=False):
+            with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
                 action = workspace.agent.act(
                     time_step.observation,
                     workspace.global_step,
@@ -239,9 +239,27 @@ def setup_exp():
         #     "num_episodes": num_episodes,
         #     "snapshot_name": "snapshot_3914k_for_test.pt",
         # },
+        # {
+        #     "model_type": "drqv2--gimbal-7m",
+        #     "target_dir": "/home/user/landing/exp_local/2025.08.30/111223_/",
+        #     "num_episodes": num_episodes,
+        #     "snapshot_name": "snapshot.pt",
+        # },
         {
-            "model_type": "drqv2--gimbal-7m",
-            "target_dir": "/home/user/landing/exp_local/2025.08.30/111223_/",
+            "model_type": "drqv2-gimbal-0913-7m",
+            "target_dir": "/home/user/landing/exp_local/2025.09.13/002322_num_train_frames=7000000,stddev_schedule='linear(1.0, 0.01, 6200000)'/",
+            "num_episodes": num_episodes,
+            "snapshot_name": "snapshot.pt",
+        },
+        {
+            "model_type": "drqv2-gimbal-0913-4m",
+            "target_dir": "/home/user/landing/exp_local/2025.09.13/002250_num_train_frames=4000000,stddev_schedule='linear(1.0, 0.01, 3600000)'/",
+            "num_episodes": num_episodes,
+            "snapshot_name": "snapshot.pt",
+        },
+        {
+            "model_type": "drqv2-gimbal-0913-3m",
+            "target_dir": "/home/user/landing/exp_local/2025.09.13/002135_num_train_frames=3000000,stddev_schedule='linear(1.0, 0.01, 2700000)'/",
             "num_episodes": num_episodes,
             "snapshot_name": "snapshot.pt",
         },
