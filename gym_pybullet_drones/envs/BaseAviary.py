@@ -325,7 +325,7 @@ class BaseAviary(gym.Env):
     
     def _get_vehicle_position(self):
         """ Returns the helipad center position and orientation """
-        return p.getLinkState(self.vehicleId, 7, physicsClientId=self.CLIENT)[0:2]
+        return p.getLinkState(self.vehicleId, 8, physicsClientId=self.CLIENT)[0:2]
 
     def _get_vehicle_velocity(self):
         """ Returns the linear and angular velocity of the vehicle """
