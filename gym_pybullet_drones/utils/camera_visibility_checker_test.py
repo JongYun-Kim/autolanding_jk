@@ -11,10 +11,10 @@ def visualize_camera_view(checker, rect_xyz, cam_pos, cam_forward, cam_up, title
     """
     Visualize the camera setup and the projected rectangle on the image plane.
     """
-    fig = plt.figure(figsize=(20, 7))
+    fig = plt.figure(figsize=(20, 13))
 
     # 1. 3D Scene View
-    ax1 = fig.add_subplot(131, projection='3d')
+    ax1 = fig.add_subplot(121, projection='3d')
 
     # Draw rectangle
     rect_ordered, _ = checker._order_quad_on_plane(rect_xyz, checker.eps_planar)
@@ -34,10 +34,6 @@ def visualize_camera_view(checker, rect_xyz, cam_pos, cam_forward, cam_up, title
     ax1.quiver(cam_pos[0], cam_pos[1], cam_pos[2],
                cam_forward[0] * arrow_len, cam_forward[1] * arrow_len, cam_forward[2] * arrow_len,
                color='red', arrow_length_ratio=0.2)
-
-
-
-
 
     # --- Draw camera frustum properly intersected with the z=0 plane ---
     # Get FOV parameters
@@ -98,16 +94,19 @@ def visualize_camera_view(checker, rect_xyz, cam_pos, cam_forward, cam_up, title
     ax1.set_title('3D Scene')
     ax1.legend()
     ax1.set_box_aspect([1, 1, 1])
-    ax1.set_xlim(-2, 2)
-    ax1.set_ylim(-2, 2)
-    ax1.set_zlim(0, 2)
+    # ax1.set_xlim(-2, 2)
+    # ax1.set_ylim(-2, 2)
+    # ax1.set_zlim(0, 2)
+    # ax1.set_xlim(-2, 2)
+    # ax1.set_ylim(-2, 2)
+    # ax1.set_zlim(0, 2)
 
     # 2. Image Plane Projection
-    ax2 = fig.add_subplot(132)
+    ax2 = fig.add_subplot(122)
 
     # Get projection
     rvec, tvec, R_wc = checker._make_extrinsics(cam_pos, cam_forward, cam_up)
-    proj = checker._project_points(rect_ordered, rvec, tvec)
+    proj = checker._proj
 
     # Draw image frame [-1, 1] x [-1, 1]
     frame = Rectangle((-1, -1), 2, 2, fill=False, edgecolor='black', linewidth=2)
@@ -120,7 +119,7 @@ def visualize_camera_view(checker, rect_xyz, cam_pos, cam_forward, cam_up, title
     # Mark vertices
     for i, p in enumerate(proj):
         ax2.plot(p[0], p[1], 'ro', markersize=8)
-        ax2.text(p[0] + 0.05, p[1] + 0.05, f'V{i}', fontsize=10)
+        # ax2.text(p[0] + 0.05, p[1] + 0.05, f'V{i}', fontsize=10)
 
     ax2.set_xlim(-1.5, 1.5)
     ax2.set_ylim(-1.5, 1.5)
@@ -130,33 +129,33 @@ def visualize_camera_view(checker, rect_xyz, cam_pos, cam_forward, cam_up, title
     ax2.set_ylabel('Y (normalized)')
     ax2.set_title('Projected View (Image Plane)')
 
-    # 3. Coverage Info
-    ax3 = fig.add_subplot(133)
-    ax3.axis('off')
-
-    # Calculate visibility
-    visible = checker.is_visible(rect_xyz, cam_pos, cam_forward, cam_up, min_fraction=0.0)
-    coverage = checker.target_coverage
-
-    info_text = f"""
-    {title}
-
-    Camera Position: ({cam_pos[0]:.1f}, {cam_pos[1]:.1f}, {cam_pos[2]:.1f})
-    Camera Forward: ({cam_forward[0]:.1f}, {cam_forward[1]:.1f}, {cam_forward[2]:.1f})
-    FOV: 90°
-
-    Rectangle Vertices:
-    {rect_xyz}
-
-    Projected Coordinates:
-    {proj}
-
-    Visibility: {visible}
-    Coverage: {coverage:.2%} of frame
-    """
-
-    ax3.text(0.1, 0.5, info_text, fontsize=12, family='monospace',
-             verticalalignment='center', transform=ax3.transAxes)
+    # # 3. Coverage Info
+    # ax3 = fig.add_subplot(133)
+    # ax3.axis('off')
+    #
+    # # Calculate visibility
+    # visible = checker.is_visible(rect_xyz, cam_pos, cam_forward, cam_up, min_fraction=0.0)
+    # coverage = checker.target_coverage
+    #
+    # info_text = f"""
+    # {title}
+    #
+    # Camera Position: ({cam_pos[0]:.1f}, {cam_pos[1]:.1f}, {cam_pos[2]:.1f})
+    # Camera Forward: ({cam_forward[0]:.1f}, {cam_forward[1]:.1f}, {cam_forward[2]:.1f})
+    # FOV: 90°
+    #
+    # Rectangle Vertices:
+    # {rect_xyz}
+    #
+    # Projected Coordinates:
+    # {proj}
+    #
+    # Visibility: {visible}
+    # Coverage: {coverage:.2%} of frame
+    # """
+    #
+    # ax3.text(0.1, 0.5, info_text, fontsize=12, family='monospace',
+    #          verticalalignment='center', transform=ax3.transAxes)
 
     plt.suptitle(title, fontsize=14, fontweight='bold')
     plt.tight_layout()
@@ -300,15 +299,22 @@ if __name__ == "__main__":
         [-0.25, -0.25,  0.0],
     ])
 
-    cam_pos = np.array([0.0, 0.0, 1.616])
-    cam_forward = np.array([0.0, 0.0, -1.0])
-    cam_up = np.array([0.0, 1.0, 0.0])
+    # cam_pos = np.array([0.1, -0.1, 0.3])
+    # cam_forward = np.array([0.25, -0.6, -1.0])
+    # cam_up = np.array([0.0, 1.0, 0.0])
+
+    # cam_pos_1 = np.array([0.1, -0.1, 0.30])    # Case 1
+    cam_pos_1 = np.array([0.0, 0.0, 0.5405346])  # triangle
+    # cam_pos_2 = np.array([0.0, 0.0, 0.0005])   # Case 2 (slightly lower)
+    # cam_forward = np.array([0.25, -0.6, -1.0])
+    cam_forward = np.array([0.611436, 0.611436, -1.0])  # trianble
+    cam_up = np.array([1.0, 1.0, 0.0])
 
     # cam_pos = np.array([-np.sqrt(2), -np.sqrt(2), 2])
     # cam_forward = checker._normalize(np.array([np.sqrt(2), np.sqrt(2), -2]))  # 원점을 바라보도록
     # cam_up = np.array([np.sqrt(2), np.sqrt(2), 0.0])
 
-    visible = checker.is_visible(rect, cam_pos, cam_forward, cam_up, min_fraction=0.0014)
+    visible = checker.is_visible(rect, cam_pos_1, cam_forward, cam_up, min_fraction=0.0014)
     print(f"\nFinal Result:")
     print(f"  visible: {visible} (Expected: True)")
     print(f"  coverage: {checker.target_coverage * 100:.6f}\% (Expected: 10.10)")
@@ -321,6 +327,6 @@ if __name__ == "__main__":
     else:
         print("\n✗ There may still be an issue.")
 
-    fig_manual = visualize_camera_view(checker, rect, cam_pos, cam_forward, cam_up,
+    fig_manual = visualize_camera_view(checker, rect, cam_pos_1, cam_forward, cam_up,
                                       "Manual Test: Camera at (-2,-2,2) looking at origin")
     plt.show()
