@@ -677,9 +677,9 @@ class LandingGimbalAviary(LandingAviary):
         """Initialization of a single agent RL environment with gimbal control."""
         print("In [gym_pybullet_drones] LandingGimbalAviary inits..$")
 
-        self._cam_dir_local = np.array([0.0, 0.0, -1.0], dtype=np.float32)  # camera forward (-z)
-        self._cam_up_local  = np.array([1.0, 0.0, 0.0], dtype=np.float32)   # camera up (+x)
-        self._cam_offset_local = np.array([0.0, 0.0, -0.0034], dtype=np.float32)  # 아래로 약간 오프셋
+        self._cam_dir_local = np.array([0.0, 0.0, -1.0], dtype=np.float64)  # camera forward (-z)
+        self._cam_up_local  = np.array([1.0, 0.0, 0.0], dtype=np.float64)   # camera up (+x)
+        self._cam_offset_local = np.array([0.0, 0.0, -0.0034], dtype=np.float64)  # 아래로 약간 오프셋
 
         self._cam_fwd_world = None
         self._cam_up_world = None
@@ -694,7 +694,7 @@ class LandingGimbalAviary(LandingAviary):
         # Angles: [pitch,  roll,  yaw]
         # gimbal_target: target gimbal angles in normalized [-1, 1] range
         self.gimbal_target = None  # action[3:]
-        self.initial_gimbal_target = np.array([-1.0, 0.0, 0.0])  # camera pointing down, no roll, no yaw
+        self.initial_gimbal_target = np.array([0.0, 0, 0.0])  # camera pointing down, no roll, no yaw
 
         # Gimbal specs
         eps = 1e-6
@@ -960,7 +960,8 @@ class LandingGimbalAviary(LandingAviary):
         )
         return visibility
 
-    def is_target_visible_og(self, margin_deg=0.0, return_details=False):
+    def is_target_center_visible(self, margin_deg=0.0, return_details=False):
+        # DEPRECATED: use self.visibility_checker.is_visible() instead
         """
         현재 짐벌 상태/카메라 파라미터에서 UGV가 프레임 내에 있는지 판정.
         - margin_deg: 여유각(양수면 더 엄격한 프레임 내 판정)
