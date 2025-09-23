@@ -856,69 +856,109 @@ class LandingGimbalAviary(LandingAviary):
 
     def compute_oracle_gimbal(self):
         """
-        현재 드론 상태에서 'UGV를 정중앙'에 두도록 하는 오라클 짐벌을 계산만 합니다.
-        - env 상태는 바꾸지 않음 (self.gimbal_target 변경 없음)
-        - 반환:
-          dict {
-            'quat': np.ndarray(4,)  # [x,y,z,w] 로컬(드론기준) 카메라 회전
-            'angles_rad': np.ndarray(3,)  # [pitch, roll(=0), yaw], radians
-            'angles_norm': np.ndarray(3,) # 위 angles_rad 를 [-1,1]^3 범위로 정규화
-          }
+        Compute the ideal (oracle) gimbal orientation that points the camera optical axis at the helipad target.
+
+        Frames & axes:
+          - World: PyBullet Z-up, right-handed.
+          - Drone/body: rotation to world is rot_drone; to convert world→drone, use rot_drone.T.
+          - Camera local (pre-gimbal, fixed): forward = -Z, up = +X, right = +Y.
+          - Gimbal rotation: R_gimbal = Rz(yaw) @ Ry(pitch), applied to camera-local axes to yield camera in drone frame.
+            Roll is unused (kept 0).
+
+        Output:
+          - 'quat': camera-local→drone rotation as quaternion [x,y,z,w].
+          - 'angles_rad': np.array([pitch, roll(=0), yaw]) in radians, clipped to self.gimbal_angle_ranges.
+          - 'angles_norm': normalized angles in [-1,1]^3 via _rad_to_norm.
+          - 'oracle_forward_local': desired camera forward in drone frame (unit), i.e., where (-Z_cam) should point.
+
+        Guarantees:
+          - Uses atan2-based extraction; numerically stable.
+          - Handles near-singular cases (target nearly collinear with up_ref).
+          - Quaternion and vectors are normalized.
         """
-        # 1) 드론/UGV/카메라 위치/자세
-        UGV_pos = np.array(self._get_vehicle_position()[0], dtype=np.float64)
-        drone_state = self._getDroneStateVector(0)
-        drone_pos = drone_state[0:3].astype(np.float64)
+        # 1) Positions/orientation
+        UGV_pos = np.array(self._get_vehicle_position()[0], dtype=np.float64)  # helipad top-center
+        drone_pos = self.pos[0, :].astype(np.float64)
         drone_quat = self.quat[0, :]
         rot_drone = np.array(p.getMatrixFromQuaternion(drone_quat)).reshape(3, 3).astype(np.float64)
 
         cam_pos_world = drone_pos + rot_drone @ self._cam_offset_local
 
-        # 2) 목표 방향(월드)
+        # 2) Desired forward in world (from camera to target)
         to_target_world = UGV_pos - cam_pos_world
-        dist = np.linalg.norm(to_target_world)
+        dist = float(np.linalg.norm(to_target_world))
         if dist < 1e-9:
-            # 거의 같은 위치면 이전 값에 의존해야 하지만, 여기서는 정면으로 가정
+            # Degenerate: keep current viewing direction
             f_world = rot_drone @ self._cam_dir_local
         else:
             f_world = to_target_world / dist
 
-        # 3) 안정적인 월드 업 기준
+        # 3) Choose a robust world up reference and build orthonormal frame about f_world
         up_ref = np.array([0.0, 0.0, 1.0], dtype=np.float64)
         if abs(np.dot(f_world, up_ref)) > 0.95:
             up_ref = np.array([0.0, 1.0, 0.0], dtype=np.float64)
 
-        # 4) 월드 기준 right/up
         right_world = np.cross(up_ref, f_world)
-        right_world /= (np.linalg.norm(right_world) + 1e-12)
+        n = np.linalg.norm(right_world)
+        right_world = right_world / (n + 1e-12)
+
         up_world = np.cross(f_world, right_world)
-        up_world /= (np.linalg.norm(up_world) + 1e-12)
+        up_world = up_world / (np.linalg.norm(up_world) + 1e-12)
 
-        # 5) 드론 로컬로 가져와 카메라 로컬 회전행렬(R_local) 구성
+        # 4) Bring basis into drone frame
         f_local = rot_drone.T @ f_world
+        f_local = f_local / (np.linalg.norm(f_local) + 1e-12)
+
         u_local = rot_drone.T @ up_world
-        f_local /= (np.linalg.norm(f_local) + 1e-12)
+        u_local = u_local / (np.linalg.norm(u_local) + 1e-12)
+
         r_local = np.cross(u_local, f_local)
-        r_local /= (np.linalg.norm(r_local) + 1e-12)
+        r_local = r_local / (np.linalg.norm(r_local) + 1e-12)
+
+        # Re-orthogonalize u_local to avoid drift
         u_local = np.cross(f_local, r_local)
-        u_local /= (np.linalg.norm(u_local) + 1e-12)
+        u_local = u_local / (np.linalg.norm(u_local) + 1e-12)
 
-        R_local = np.column_stack([f_local, r_local, u_local])  # e_x->f, e_y->r, e_z->u
-        quat = R.from_matrix(R_local).as_quat()
+        # 5) Rotation camera-local→drone: columns are images of cam axes (X=up, Y=right, Z=back)
+        #    cam_x(+X up) -> u_local, cam_y(+Y right) -> r_local, cam_z(+Z back) -> -f_local (since forward is -Z)
+        R_local = np.column_stack([u_local, r_local, -f_local])
+        # Numerical cleanup
+        U, _, Vt = np.linalg.svd(R_local)
+        R_local = U @ Vt  # nearest proper rotation
+        quat = R.from_matrix(R_local).as_quat()  # [x,y,z,w]
 
-        # 6) 오라클 규약에서의 (yaw,pitch) 추출, roll=0
-        #    forward=+x, right=+y, up=+z 에서:
-        #    yaw   = atan2(f_local_y, f_local_x)
-        #    pitch = atan2(-f_local_z, sqrt(f_local_x^2 + f_local_y^2))
-        fx, fy, fz = f_local
-        yaw = float(np.arctan2(fy, fx))
-        pitch = float(np.arctan2(-fz, np.sqrt(fx * fx + fy * fy)))
+        # 6) Extract yaw/pitch for Rz(yaw) @ Ry(pitch) such that R_gimbal @ (-Z) = f_local
+        fx, fy, fz = f_local.astype(np.float64)
+        # Clamp for safety
+        fx = float(np.clip(fx, -1.0, 1.0))
+        fy = float(np.clip(fy, -1.0, 1.0))
+        fz = float(np.clip(fz, -1.0, 1.0))
+
+        yaw = float(np.arctan2(fy, fx))  # [-pi, pi]
+        s = float(np.sqrt(max(fx * fx + fy * fy, 0.0)))
+        pitch = float(np.arctan2(s, -fz))  # in [0, pi]
+
+        # 7) Roll fixed to 0; clip to gimbal limits then normalize
         roll = 0.0
-
         angles_rad = np.array([pitch, roll, yaw], dtype=np.float32)
+
+        # Clip to configured ranges to keep oracle within actuator limits
+        lo = self.gimbal_angle_ranges[:, 0].astype(np.float64)
+        hi = self.gimbal_angle_ranges[:, 1].astype(np.float64)
+        # Wrap yaw to (-pi, pi]
+        yaw_wrapped = (angles_rad[2] + np.pi) % (2 * np.pi) - np.pi
+        angles_rad = np.array([angles_rad[0], angles_rad[1], yaw_wrapped], dtype=np.float64)
+        # Clip
+        angles_rad = np.minimum(np.maximum(angles_rad, lo), hi).astype(np.float32)
+
         angles_norm = self._rad_to_norm(angles_rad)
 
-        return {'quat': quat, 'angles_rad': angles_rad, 'angles_norm': angles_norm, 'oracle_forward_local': f_local}
+        return {
+            'quat': quat,
+            'angles_rad': angles_rad,
+            'angles_norm': angles_norm,
+            'oracle_forward_local': f_local
+        }
 
     def is_target_visible(self):
 
@@ -1125,6 +1165,7 @@ class LandingGimbalAviary(LandingAviary):
             cos_align = cos_align**5  # 보상 변화가 더 뚜렸하게 함.
             # -1(정반대), 0(직교), 1(정렬)
             reward += 0.1 * cos_align  # 스케일은 필요에 따라 튜닝
+            print(f"Target in FOV, cos_align={cos_align:.3f}, reward={reward:.3f}")
         else:
             reward = -0.025  # 시야 밖 페널티
 
