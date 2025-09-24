@@ -72,6 +72,8 @@ class LandingAviary(BaseSingleAgentAviary):
         self.num_step_repeats = 4
         self.IMG_CAPTURE_FREQ = self.AGGR_PHY_STEPS * self.num_step_repeats
         self.IMG_FRAME_PER_SEC = self.SIM_FREQ / self.IMG_CAPTURE_FREQ
+
+        self.desired_landing_altitude = 0.2745
     
     def video_camera(self):
         nth_drone = 0
@@ -214,10 +216,10 @@ class LandingAviary(BaseSingleAgentAviary):
         #if combined_reward < 0:
         #    print(drone_velocity)
         #    exit()
-        if drone_position[2] >= 0.275 and p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ():
+        if drone_position[2] >= self.desired_landing_altitude and p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ():
             print('landed!')
             combined_reward =  140 + combined_reward
-        elif drone_position[2]  < 0.275 and p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ():
+        elif drone_position[2]  < self.desired_landing_altitude and p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ():
             print('crashed!')
             combined_reward = -1 #normalized_distance_xy * 10 #0#5*distance_xy + combined_reward
         else:
@@ -240,7 +242,7 @@ class LandingAviary(BaseSingleAgentAviary):
     def _computeDone(self):
         if p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ():
             drone_altitude = self._getDroneStateVector(0)[2]
-            if drone_altitude >= 0.275:
+            if drone_altitude >= 0.2745:
                 print('_computeDone: Landed!')
             else:
                 print('_computeDone: Crashed!')
@@ -260,7 +262,7 @@ class LandingAviary(BaseSingleAgentAviary):
         UGV_pos = np.array(self._get_vehicle_position()[0])
         x_pos_error = np.linalg.norm(drone_position[0]-UGV_pos[0])
         y_pos_error = np.linalg.norm(drone_position[1]-UGV_pos[1])
-        if drone_position[2] >= 0.275 and p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ():
+        if drone_position[2] >= self.desired_landing_altitude and p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ():
             landing_flag = True
         else:
             landing_flag = False
@@ -698,15 +700,10 @@ class LandingGimbalAviary(LandingAviary):
 
         # Gimbal specs
         eps = 1e-6
-        # self.gimbal_angle_ranges = np.array([       # (3,2)
-        #     [0        +eps  ,  (5*np.pi/19)-0.004 -eps],  # Pitch :  0 (down) to 50-ish degrees (no horizon at hovering)
-        #     [-np.pi/4.      ,  np.pi/4                ],  # Roll  : -45       to 45     degrees
-        #     [-np.pi  + eps  ,  np.pi              -eps],  # Yaw   : -180      to 180    degrees
-        # ], dtype=np.float32)  # Ranges for gimbal angles in radians
         self.gimbal_angle_ranges = np.array([       # (3,2)
             [-(5*np.pi/19)+0.004  +eps, (5*np.pi/19)-0.004 -eps],  # Pitch : +-50-ish degrees (no horizon at hovering)
-            [-np.pi/4.                , np.pi/4                ],  # Roll  :  -45  to 45     degrees
-            [-np.pi/2             +eps, np.pi/2            -eps],  # Yaw   :  -180 to 180    degrees
+            [-np.pi/4.                , np.pi/4                ],  # Roll  :  -45   to  45     degrees
+            [-np.pi/2             +eps, np.pi/2            -eps],  # Yaw   :  -90   to  90     degrees
         ], dtype=np.float32)  # Ranges for gimbal angles in radians
 
         # gimbal_state_quat: current gimbal angles in quaternion format
@@ -805,8 +802,8 @@ class LandingGimbalAviary(LandingAviary):
         pitch_rad, roll_rad, yaw_rad = self._norm_to_rad(self.gimbal_target)
 
         # 2) 드론 자세
-        drone_pos = self.pos[nth_drone, :]
-        drone_quat = self.quat[nth_drone, :]
+        drone_pos = np.array(p.getBasePositionAndOrientation(self.DRONE_IDS[0], physicsClientId=self.CLIENT)[0])
+        drone_quat = np.array(p.getBasePositionAndOrientation(self.DRONE_IDS[0], physicsClientId=self.CLIENT)[1])
         rot_drone = np.array(p.getMatrixFromQuaternion(drone_quat)).reshape(3, 3)
 
         # 3) 짐벌 로컬 회전(Rz @ Ry)
@@ -878,8 +875,8 @@ class LandingGimbalAviary(LandingAviary):
         """
         # 1) Positions/orientation
         UGV_pos = np.array(self._get_vehicle_position()[0], dtype=np.float64)  # helipad top-center
-        drone_pos = self.pos[0, :].astype(np.float64)
-        drone_quat = self.quat[0, :]
+        drone_pos, drone_quat = p.getBasePositionAndOrientation(self.DRONE_IDS[0], physicsClientId=self.CLIENT)
+        drone_pos, drone_quat = np.array(drone_pos, dtype=np.float64), np.array(drone_quat, dtype=np.float64)
         rot_drone = np.array(p.getMatrixFromQuaternion(drone_quat)).reshape(3, 3).astype(np.float64)
 
         cam_pos_world = drone_pos + rot_drone @ self._cam_offset_local
@@ -960,35 +957,28 @@ class LandingGimbalAviary(LandingAviary):
             'oracle_forward_local': f_local
         }
 
-    def is_target_visible(self):
+    def is_target_visible(self, drone_position, drone_quaternion, pad_position):
 
-        # Pad
-        pad_pos = np.array(self._get_vehicle_position()[0])
-        pad_hf = 0.2875 #2875gives0.1margin  # Helipad - visual shape: (0.675, 0.675, 0), collision shape: (0.5, 0.5, 0)
+        # Pad geometry
+        # pad_pos = np.array(self._get_vehicle_position()[0])
+        # pad_hf = 0.2875 #2875gives0.1margin  # Helipad - visual shape: (0.675, 0.675, 0), collision shape: (0.5, 0.5, 0)
+        pad_hf = 0.3375
         pad_corners = np.array([
             [ pad_hf,  pad_hf, 0.0],
             [ pad_hf, -pad_hf, 0.0],
             [-pad_hf, -pad_hf, 0.0],
             [-pad_hf,  pad_hf, 0.0],
-        ]) + pad_pos
+        ]) + pad_position
 
-        # Drone
-        drone_pos = self.pos[0, :].astype(np.float64)
-        drone_quat = self.quat[0, :]
-        rot_drone = np.array(p.getMatrixFromQuaternion(drone_quat)).reshape(3, 3).astype(np.float64)
+        # Drone rotation
+        rot_drone = np.array(p.getMatrixFromQuaternion(drone_quaternion)).reshape(3, 3).astype(np.float64)
 
         # Camera
         pitch_rad, _, yaw_rad = self._norm_to_rad(self.gimbal_target)
         R_local = self._gimbal_rot_from_angles(pitch_rad, 0.0, yaw_rad)
-        cam_pos_world = drone_pos + rot_drone @ self._cam_offset_local
+        cam_pos_world = drone_position + rot_drone @ self._cam_offset_local
         cam_fwd_world = rot_drone @ (R_local @ self._cam_dir_local)
         cam_up_world = rot_drone @ (R_local @ self._cam_up_local)
-
-        # # Debugging: camera pos, fwd, up (check cam_ and self._cam_ are close enough)
-        # # Note: should be disabled because later self._cam_* are only updated when _getDroneImages is called
-        # assert np.linalg.norm(cam_pos_world - self._cam_pos_world) < 1e-3, f"cam_pos_world mismatch {cam_pos_world} vs {self._cam_pos_world}"
-        # assert np.linalg.norm(cam_fwd_world - self._cam_fwd_world) < 1e-4, f"cam_fwd_world mismatch {cam_fwd_world} vs {self._cam_fwd_world}"
-        # assert np.linalg.norm(cam_up_world - self._cam_up_world) < 1e-4, f"cam_up_world mismatch {cam_up_world} vs {self._cam_up_world}"
 
         # Visibility
         visibility = self.visibility_checker.is_visible(
@@ -1000,89 +990,8 @@ class LandingGimbalAviary(LandingAviary):
         )
         return visibility
 
-    def is_target_center_visible(self, margin_deg=0.0, return_details=False):
-        # DEPRECATED: use self.visibility_checker.is_visible() instead
-        """
-        현재 짐벌 상태/카메라 파라미터에서 UGV가 프레임 내에 있는지 판정.
-        - margin_deg: 여유각(양수면 더 엄격한 프레임 내 판정)
-        - return_details=True 이면 보조정보(픽셀좌표 등) dict도 반환
-        반환:
-          - return_details=False: bool
-          - return_details=True : (bool, dict)
-        """
-        # 1) 기하 확보
-        UGV_pos = np.array(self._get_vehicle_position()[0], dtype=np.float64)
-        drone_pos = self.pos[0, :].astype(np.float64)
-        drone_quat = self.quat[0, :]
-        rot_drone = np.array(p.getMatrixFromQuaternion(drone_quat)).reshape(3, 3).astype(np.float64)
-
-        # 현재 짐벌 회전
-        pitch_rad, roll_rad, yaw_rad = self._norm_to_rad(self.gimbal_target)
-        R_local = self._gimbal_rot_from_angles(pitch_rad, roll_rad, yaw_rad)
-
-        cam_pos_world = drone_pos + rot_drone @ self._cam_offset_local
-        f_world = rot_drone @ (R_local @ self._cam_dir_local)
-        u_world = rot_drone @ (R_local @ self._cam_up_local)
-        r_world = np.cross(u_world, f_world)
-
-        to_target = UGV_pos - cam_pos_world
-        if np.linalg.norm(to_target) < 1e-9:
-            visible = True
-            details = {'pixel': (self.IMG_RES[0] // 2, self.IMG_RES[1] // 2)}
-            return (visible, details) if return_details else visible
-
-        # 2) 카메라 좌표계(+x fwd, +y right, +z up) 성분
-        x_cam = np.dot(to_target, f_world)
-        y_cam = np.dot(to_target, r_world)
-        z_cam = np.dot(to_target, u_world)
-
-        # 3) FOV 판정
-        vfov_half = np.deg2rad(self._fov_deg * 0.5)
-        hfov_half = np.arctan(np.tan(vfov_half) * self._aspect)
-
-        # 여유각 적용
-        vfov_half_eff = vfov_half - np.deg2rad(margin_deg)
-        hfov_half_eff = hfov_half - np.deg2rad(margin_deg)
-        vfov_half_eff = max(vfov_half_eff, 1e-6)
-        hfov_half_eff = max(hfov_half_eff, 1e-6)
-
-        if x_cam <= 0.0:
-            visible = False
-            det = {'reason': 'behind camera', 'pixel': None}
-            return (visible, det) if return_details else visible
-
-        yaw_offset = np.arctan2(y_cam, x_cam)  # 좌우 각
-        pitch_offset = np.arctan2(z_cam, x_cam)  # 상하 각
-
-        visible = (abs(yaw_offset) <= hfov_half_eff) and (abs(pitch_offset) <= vfov_half_eff)
-
-        details = None
-        if return_details:
-            # 4) 픽셀 좌표 추정 (정확한 pinhole 투영 기반)
-            #    u_ndc = (y/x)/tan(hfov_half), v_ndc = (z/x)/tan(vfov_half)  in [-1,1]
-            u_ndc = (y_cam / x_cam) / np.tan(hfov_half)
-            v_ndc = (z_cam / x_cam) / np.tan(vfov_half)
-            # NDC(-1..1) -> pixel(0..W/H); v는 위가 작아야 하므로 반전
-            W, H = int(self.IMG_RES[0]), int(self.IMG_RES[1])
-            u_px = (u_ndc * 0.5 + 0.5) * W
-            v_px = (1.0 - (v_ndc * 0.5 + 0.5)) * H
-            details = {
-                'pixel': (float(u_px), float(v_px)),
-                'yaw_offset_deg': np.rad2deg(yaw_offset),
-                'pitch_offset_deg': np.rad2deg(pitch_offset),
-                'x_cam_y_z': (float(x_cam), float(y_cam), float(z_cam)),
-                'ndc': (float(u_ndc), float(v_ndc))
-            }
-
-        return (visible, details) if return_details else visible
-
     def reset(self):
         self.gimbal_target = self.initial_gimbal_target
-        # _ = super().reset()
-        # # ★ 초기 gimbal로 한 번 캡처해서 env.rgb를 일치시킴
-        # rgb, _, _ = self._getDroneImages(0, segmentation=False)
-        # self.rgb = rgb
-        # return self.rgb
         return super().reset()
 
     def step(self, action):
@@ -1090,22 +999,15 @@ class LandingGimbalAviary(LandingAviary):
         self.gimbal_target = np.array([action[3], 0.0, action[4]], dtype=np.float32)
         if not np.all(np.abs(self.gimbal_target) <= 1.0 + 1e-9):
             raise ValueError(f"Gimbal target angles must be in [-1, 1], got {self.gimbal_target}")
-
         vel_cmd = action[0:3]
         return super().step(vel_cmd)
 
-    def _computeReward_good(self):
+    def _compute_hv_rewards(self, drone_position, drone_velocity, pad_position):
         desired_z_velocity = -0.5
         alpha = 30
-        UGV_pos = np.array(self._get_vehicle_position()[0])
-        drone_state = self._getDroneStateVector(0)
-        drone_position = drone_state[0:3]
-        drone_velocity = drone_state[10:13]
-        distance_xy = np.linalg.norm(drone_position[0:2] - UGV_pos[0:2])
-        distance_z = np.linalg.norm(drone_position[2:3] - UGV_pos[2:3])
+        distance_xy = np.linalg.norm(drone_position[0:2] - pad_position[0:2])
         velocity_z_flag = (0 > drone_velocity[2]) * (drone_velocity[2] > desired_z_velocity)
         reward_z_velocity = (alpha ** (drone_velocity[2] / desired_z_velocity) - 1) / (alpha - 1)
-        angle = np.rad2deg(np.arctan2(distance_xy, distance_z))
         # punishment for excessive z velocity
         if velocity_z_flag == False:
             if drone_velocity[2] < desired_z_velocity:
@@ -1114,25 +1016,12 @@ class LandingGimbalAviary(LandingAviary):
                 reward_z_velocity = -0.1  # - 10*drone_velocity[2]
             if abs(drone_velocity[2]) / self.SPEED_LIMIT[2] > 1.1:
                 reward_z_velocity = 0  # reward_z_velocity -5
-        # reward_xy_velocity = np.sum(-np.abs(drone_velocity[0:2]- desired_xy_velocity))
         if distance_xy < 8:
             normalized_distance_xy = 0.125 * (8 - distance_xy)
             reward_xy = (30 ** normalized_distance_xy - 1) / (30 - 1)
         else:
             reward_xy = 0  # -distance_xy
         combined_reward = 0.56 * reward_xy + 1.0 * reward_z_velocity
-        if drone_position[2] >= 0.275 and p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ():
-            print('landed!')
-            combined_reward = 140 + combined_reward
-        elif drone_position[2] < 0.275 and p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ():
-            print('crashed!')
-            combined_reward = -1  # normalized_distance_xy * 10 #0#5*distance_xy + combined_reward
-        else:
-            combined_reward = combined_reward
-        # distance_x = np.abs(drone_position[0] - UGV_pos[0])
-        # distance_y = np.abs(drone_position[1] - UGV_pos[1])
-        # if np.abs(angle) > 30 and (distance_y > 0.8 and distance_x > 0.8):
-        #     combined_reward = -0.01
 
         return combined_reward
 
@@ -1146,30 +1035,58 @@ class LandingGimbalAviary(LandingAviary):
         # 굳이 드론 로컬로 옮기고 싶다면: f_drone = f_local (카메라축 자체가 드론 로컬 축에 정의됨)
         return f_local / (np.linalg.norm(f_local) + 1e-12)
 
-    def _computeReward(self):
-        # 1) 기본 보상
-        if self.is_target_visible():
-            reward = self._computeReward_good()
-
-            # 2) 오라클 forward
+    def _compute_viz_reward(self, is_visible):
+        if is_visible:
+            # Get oracle
             oracle = self.compute_oracle_gimbal()
             R_oracle = R.from_quat(oracle['quat']).as_matrix()  # camera-local rotation in drone frame
             f_oracle = R_oracle @ self._cam_dir_local
             f_oracle /= (np.linalg.norm(f_oracle) + 1e-12)
 
-            # 3) 현재 짐벌 forward (현재 액션/타겟에서 직접 계산)
+            # Get gimbal forward (현재 액션/타겟에서 직접 계산)
             f_curr = self._forward_from_norm_angles(self.gimbal_target)
 
-            # 4) 의도한 '코사인 정렬' 보상
+            # Compute cosine alignment
             cos_align = float(np.clip(np.dot(f_curr, f_oracle), -1.0, 1.0))
-            cos_align = cos_align**5  # 보상 변화가 더 뚜렸하게 함.
+            cos_align = cos_align**5  # let's make it sharper with cheaper computation
             # -1(정반대), 0(직교), 1(정렬)
-            reward += 0.1 * cos_align  # 스케일은 필요에 따라 튜닝
-            print(f"Target in FOV, cos_align={cos_align:.3f}, reward={reward:.3f}")
+            # print(f"cos_align: {cos_align:.4f}")
+            # print(f"    f_curr:   {f_curr}")
+            # print(f"    f_oracle: {f_oracle}")
+            # print(f"    ")
+            return 0.1 * cos_align  # 스케일은 필요에 따라 튜닝
         else:
-            reward = -0.025  # 시야 밖 페널티
+            return -0.025
 
-        return reward
+    def _computeReward(self):
+        # 0. 드론 상태
+        drone_pos, drone_quat = p.getBasePositionAndOrientation(self.DRONE_IDS[0], physicsClientId=self.CLIENT)
+        drone_pos, drone_quat = np.array(drone_pos, dtype=np.float64), np.array(drone_quat, dtype=np.float64)
+        drone_vel = np.array(p.getBaseVelocity(self.DRONE_IDS[0], physicsClientId=self.CLIENT)[0], dtype=np.float64)
+        pad_pos = np.array(self._get_vehicle_position()[0])
+        drone_has_touched = p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ()
+
+        # 1. 착륙, 충돌의 경우 큰 보상/페널티
+        if drone_has_touched:
+            landed, crashed = (True, False) if drone_pos[2] >= self.desired_landing_altitude else (False, True)
+            if crashed:
+                return -1.0
+            elif landed:
+                # ONLY FOR DEBUGGING REMOVE the below LATER !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                if not self.is_target_visible(drone_pos, drone_quat, pad_pos):
+                    print("Check self.rgb, drone pos, pad pos etc !!")
+                    print("Drone has landed but target not visible!!!")
+                # ONLY FOR DEBUGGING REMOVE the above LATER !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                # No viz reward unfortunately due to the bug in BaseAviary making the drone go below the pad
+                return 140.0 + self._compute_hv_rewards(drone_pos, drone_vel, pad_pos)  # + self._compute_viz_reward(is_visible=True)
+            else:
+                raise ValueError("Logic error in landed/crashed check.")
+
+        # 2. 아무 접촉이 없이 진행  중인 경우
+        if self.is_target_visible(drone_pos, drone_quat, pad_pos):
+            return self._compute_hv_rewards(drone_pos, drone_vel, pad_pos) + self._compute_viz_reward(is_visible=True)
+        else:
+            return self._compute_viz_reward(is_visible=False)
 
 
 class LandingGimbalOracleAviary(LandingGimbalAviary):
