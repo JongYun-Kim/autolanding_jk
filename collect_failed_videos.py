@@ -11,16 +11,17 @@ from train_gimbal import Workspace
 from video import VideoRecorder  # for recording evaluation videos
 import csv
 
-def evaluate_workspace(workspace, model_type: str, num_episodes: int = 128):
+def evaluate_workspace(workspace, model_type: str, num_episodes: int = 128, enable_video_recording: bool = True):
     """Run `num_episodes` episodes in evaluation mode.
 
+    If `enable_video_recording` is True, videos are recorded.
     A video of the environment is recorded for every episode and
-    only saved if it ends in a failure (crash or timeout),
-    with the outcome and model_type appended to the filename.
+    saved if it ends in a failure (crash or timeout), with the outcome and model_type in the filename.
     """
     # Set up a dedicated folder for evaluation videos
     video_root = workspace.work_dir / "eval_videos"
-    video_root.mkdir(parents=True, exist_ok=True)
+    if enable_video_recording:
+        video_root.mkdir(parents=True, exist_ok=True)
 
     total_reward = 0.0
     landing_count = 0
@@ -33,10 +34,11 @@ def evaluate_workspace(workspace, model_type: str, num_episodes: int = 128):
         episode_reward = 0.0
         step_count = 0
 
-        # Always record every episode to inspect failures
-        video_recorder = VideoRecorder(video_root)
-        # video_recorder.init(workspace.eval_env, enabled=True)
-        video_recorder.init_with_frame(workspace.eval_env, enabled=True)
+        # Create recorder only if enabled
+        video_recorder = None
+        if enable_video_recording:
+            video_recorder = VideoRecorder(video_root)
+            video_recorder.init_with_frame(workspace.eval_env, enabled=True)
 
         while not time_step.last():
             with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
@@ -49,8 +51,9 @@ def evaluate_workspace(workspace, model_type: str, num_episodes: int = 128):
             time_step = workspace.eval_env.step(action)
             episode_reward += float(time_step.reward)
             step_count += 1
-            # video_recorder.record(workspace.eval_env)
-            video_recorder.record_with_frame(workspace.eval_env, action)
+
+            if enable_video_recording:
+                video_recorder.record_with_frame(workspace.eval_env, action)
 
         # Determine outcome flags
         landing_flag = bool(getattr(time_step, "landing_info", False))
@@ -62,14 +65,15 @@ def evaluate_workspace(workspace, model_type: str, num_episodes: int = 128):
             crash_flag = bool(info.get("episode end flag", False))
             timeout_flag = not crash_flag
 
-        # Save video only if failure
-        if crash_flag or timeout_flag:
-            outcome = "crash" if crash_flag else "timeout"
-            filename = f"{model_type}_eval_ep{ep:04d}_{outcome}.mp4"
-            video_recorder.save(filename)
-        else:
-            # If the episode was successful (landing), we still record but do not save
-            video_recorder.save(f"{model_type}_eval_ep{ep:04d}_success.mp4")
+        # Save video only if enabled
+        if enable_video_recording:
+            if crash_flag or timeout_flag:
+                outcome = "crash" if crash_flag else "timeout"
+                filename = f"{model_type}_eval_ep{ep:04d}_{outcome}.mp4"
+                video_recorder.save(filename)
+            else:
+                # Successful landing videos are saved too, but marked as success
+                video_recorder.save(f"{model_type}_eval_ep{ep:04d}_success.mp4")
 
         # Accumulate statistics
         total_reward += episode_reward
@@ -88,6 +92,7 @@ def evaluate_workspace(workspace, model_type: str, num_episodes: int = 128):
             "crash": int(crash_flag),
             "timeout": int(timeout_flag),
             "length": step_count,
+            "last_reward": float(time_step.reward) if hasattr(time_step, 'reward') else 0.0,
         })
 
         print(f"Episode {ep:3d} Reward: {episode_reward:.2f}, Length: {step_count:3d}")
@@ -109,6 +114,15 @@ def evaluate_workspace(workspace, model_type: str, num_episodes: int = 128):
 
 @hydra.main(config_path="cfgs", config_name="test_config")
 def my_tests(cfg):
+    # enable_video_recording = True
+    enable_video_recording = False
+    # Prompt to confirm if video recording is not enabled
+    if not enable_video_recording:
+        response = input("Video recording is disabled. Do you want to proceed? (y/n): ")
+        if response.lower() != 'y':
+            print("Exiting the test script.")
+            return
+
     exps = setup_exp()
 
     for exp in exps:
@@ -134,7 +148,12 @@ def my_tests(cfg):
         workspace.agent.eval()
 
         # Evaluate and save only failed episode videos, prefixed with model_type
-        episodes, summary = evaluate_workspace(workspace, model_type, num_episodes=num_episodes)
+        episodes, summary = evaluate_workspace(
+            workspace,
+            model_type,
+            num_episodes=num_episodes,
+            enable_video_recording=enable_video_recording,
+        )
 
         # Save per-episode results (all episodes)
         results_file = Path(f"test_results_{model_type}.csv")
@@ -148,6 +167,7 @@ def my_tests(cfg):
                     "crash",
                     "timeout",
                     "length",
+                    "last_reward",
                 ],
             )
             writer.writeheader()
@@ -183,7 +203,7 @@ def my_tests(cfg):
 
 
 def setup_exp():
-    num_episodes = 24
+    num_episodes = 200
 
     experiment_settings = [
         # {
@@ -245,24 +265,54 @@ def setup_exp():
         #     "num_episodes": num_episodes,
         #     "snapshot_name": "snapshot.pt",
         # },
+        # {
+        #     "model_type": "drqv2-gimbal-0913-7m",
+        #     "target_dir": "/home/user/landing/exp_local/2025.09.13/002322_num_train_frames=7000000,stddev_schedule='linear(1.0, 0.01, 6200000)'/",
+        #     "num_episodes": num_episodes,
+        #     "snapshot_name": "snapshot.pt",
+        # },
+        # {
+        #     "model_type": "drqv2-gimbal-0913-4m",
+        #     "target_dir": "/home/user/landing/exp_local/2025.09.13/002250_num_train_frames=4000000,stddev_schedule='linear(1.0, 0.01, 3600000)'/",
+        #     "num_episodes": num_episodes,
+        #     "snapshot_name": "snapshot.pt",
+        # },
+        # {
+        #     "model_type": "drqv2-gimbal-0913-3m",
+        #     "target_dir": "/home/user/landing/exp_local/2025.09.13/002135_num_train_frames=3000000,stddev_schedule='linear(1.0, 0.01, 2700000)'/",
+        #     "num_episodes": num_episodes,
+        #     "snapshot_name": "snapshot.pt",
+        # },
         {
-            "model_type": "drqv2-gimbal-0913-7m",
-            "target_dir": "/home/user/landing/exp_local/2025.09.13/002322_num_train_frames=7000000,stddev_schedule='linear(1.0, 0.01, 6200000)'/",
+            "model_type": "drqv2-gimbal-0913-7m-hyprtune-5729k",
+            "target_dir": "/home/user/landing/exp_local/2025.09.13/215446_agent.stddev_clip=0.42,batch_size=512,feature_dim=128,num_train_frames=7000000,replay_buffer_size=500000,stddev_schedule='linear(1.0, 0.01, 6250000)'/",
             "num_episodes": num_episodes,
-            "snapshot_name": "snapshot.pt",
+            "snapshot_name": "snapshot_5729k.pt",
         },
-        {
-            "model_type": "drqv2-gimbal-0913-4m",
-            "target_dir": "/home/user/landing/exp_local/2025.09.13/002250_num_train_frames=4000000,stddev_schedule='linear(1.0, 0.01, 3600000)'/",
-            "num_episodes": num_episodes,
-            "snapshot_name": "snapshot.pt",
-        },
-        {
-            "model_type": "drqv2-gimbal-0913-3m",
-            "target_dir": "/home/user/landing/exp_local/2025.09.13/002135_num_train_frames=3000000,stddev_schedule='linear(1.0, 0.01, 2700000)'/",
-            "num_episodes": num_episodes,
-            "snapshot_name": "snapshot.pt",
-        },
+        # {
+        #     "model_type": "drqv2-gimbal-0913-7m-hyprtune-6270k",
+        #     "target_dir": "/home/user/landing/exp_local/2025.09.13/215446_agent.stddev_clip=0.42,batch_size=512,feature_dim=128,num_train_frames=7000000,replay_buffer_size=500000,stddev_schedule='linear(1.0, 0.01, 6250000)'/",
+        #     "num_episodes": num_episodes,
+        #     "snapshot_name": "snapshot_6270k.pt",
+        # },
+        # {
+        #     "model_type": "drqv2-gimbal-0913-7m-hyprtune-6844k",
+        #     "target_dir": "/home/user/landing/exp_local/2025.09.13/215446_agent.stddev_clip=0.42,batch_size=512,feature_dim=128,num_train_frames=7000000,replay_buffer_size=500000,stddev_schedule='linear(1.0, 0.01, 6250000)'/",
+        #     "num_episodes": num_episodes,
+        #     "snapshot_name": "snapshot_6844k.pt",
+        # },
+        # {
+        #     "model_type": "drqv2-gimbal-0913-7m-hyprtune-6859k",
+        #     "target_dir": "/home/user/landing/exp_local/2025.09.13/215446_agent.stddev_clip=0.42,batch_size=512,feature_dim=128,num_train_frames=7000000,replay_buffer_size=500000,stddev_schedule='linear(1.0, 0.01, 6250000)'/",
+        #     "num_episodes": num_episodes,
+        #     "snapshot_name": "snapshot_6859k.pt",
+        # },
+        # {
+        #     "model_type": "drqv2-gimbal-0913-7m-hyprtune-7000k",
+        #     "target_dir": "/home/user/landing/exp_local/2025.09.13/215446_agent.stddev_clip=0.42,batch_size=512,feature_dim=128,num_train_frames=7000000,replay_buffer_size=500000,stddev_schedule='linear(1.0, 0.01, 6250000)'/",
+        #     "num_episodes": num_episodes,
+        #     "snapshot_name": "snapshot.pt",
+        # },
     ]
 
     return experiment_settings
