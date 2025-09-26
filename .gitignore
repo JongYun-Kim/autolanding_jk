@@ -1,3 +1,5 @@
 .idea/
 exp_local
 temp_results
+__pycache__/
+*.pyc
