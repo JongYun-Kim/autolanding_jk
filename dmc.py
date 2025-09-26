@@ -101,13 +101,13 @@ class FrameStackWrapper(gym.Wrapper):
         self._drone_states = deque([], maxlen=num_frames)
 
     def observation_spec(self):
-        return BoundedArray((3,84,84), int, minimum = 0, maximum = 255, name = 'observation')
+        return BoundedArray((self._num_frames,84,84), int, minimum = 0, maximum = 255, name = 'observation')
 
     def action_spec(self):
         return BoundedArray((3,), np.float32, minimum = -1, maximum = 1, name = 'action')
 
     def drone_state_spec(self):
-        return BoundedArray((3,7), np.float32, minimum = -1, maximum = 1, name = 'drone_state')
+        return BoundedArray((self._num_frames,7), np.float32, minimum = -1, maximum = 1, name = 'drone_state')
     
     def reward_spec(self):
         return Array((1,), np.float32, 'reward')
@@ -187,13 +187,13 @@ class FrameStackWrapperWithGimbalState(FrameStackWrapper):
         super().__init__(env, num_frames, pixels_key)
 
     def observation_spec(self):
-        return BoundedArray((3,84,84), int, minimum = 0, maximum = 255, name = 'observation')
+        return BoundedArray((self._num_frames,84,84), int, minimum = 0, maximum = 255, name = 'observation')
 
     def action_spec(self):
         return BoundedArray((5,), np.float32, minimum = -1, maximum = 1, name = 'action')
 
     def drone_state_spec(self):
-        return BoundedArray((3,11), np.float32, minimum = -1, maximum = 1, name = 'drone_state')
+        return BoundedArray((self._num_frames, 11), np.float32, minimum = -1, maximum = 1, name = 'drone_state')
 
     def reset(self):
         time_step = self.env.reset().astype(int)
