@@ -61,13 +61,13 @@ class RandomShiftsAug(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, obs_shape):
+    def __init__(self, obs_shape, num_stacks=3, drone_state_dim=11):
         super().__init__()
 
         assert len(obs_shape) == 3
         
         # self.repr_dim = 32 * 35 * 35 +(7*3)
-        self.repr_dim = 32 * 35 * 35 +(11*3)
+        self.repr_dim = 32 * 35 * 35 +(drone_state_dim * num_stacks)
         #self.repr_dim = 20736#8 * 35 * 35 +(7*3)
         self.convnet = nn.Sequential(nn.Conv2d(obs_shape[0], 32, 3, stride=2),
                                      nn.ReLU(), nn.Conv2d(32, 32, 3, stride=1),
@@ -148,7 +148,7 @@ class Critic(nn.Module):
 class DrQV2Agent:
     def __init__(self, obs_shape, action_shape, device, lr, feature_dim,
                  hidden_dim, critic_target_tau, num_expl_steps,
-                 update_every_steps, stddev_schedule, stddev_clip, use_tb):
+                 update_every_steps, stddev_schedule, stddev_clip, use_tb, frame_stack):
         self.device = device
         self.critic_target_tau = critic_target_tau
         self.update_every_steps = update_every_steps
@@ -158,11 +158,9 @@ class DrQV2Agent:
         self.stddev_clip = stddev_clip
 
         # models
-        #self.encoder = Decomposed_Encoder(obs_shape).to(device)
-        self.encoder = Encoder(obs_shape).to(device)
+        self.encoder = Encoder(obs_shape, num_stacks=frame_stack).to(device)
         self.actor = Actor(self.encoder.repr_dim, action_shape, feature_dim,
                            hidden_dim).to(device)
-        #self.actor = Actor()
         self.critic = Critic(self.encoder.repr_dim, action_shape, feature_dim,
                              hidden_dim).to(device)
         self.critic_target = Critic(self.encoder.repr_dim, action_shape,
