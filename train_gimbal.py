@@ -21,10 +21,9 @@ from video import TrainVideoRecorder, VideoRecorder
 torch.backends.cudnn.benchmark = True
 
 
-def make_agent(obs_spec, action_spec, cfg, frame_stack):
+def make_agent(obs_spec, action_spec, cfg):
     cfg.obs_shape = obs_spec.shape
     cfg.action_shape = action_spec.shape
-    cfg.frame_stack = frame_stack
     return hydra.utils.instantiate(cfg)
 
 
@@ -40,8 +39,7 @@ class Workspace:
 
         self.agent = make_agent(self.train_env.observation_spec(),
                                 self.train_env.action_spec(),
-                                self.cfg.agent,
-                                self.cfg.frame_stack)
+                                self.cfg.agent)
         self.timer = utils.Timer()
         self._global_step = 0
         self._global_episode = 0
