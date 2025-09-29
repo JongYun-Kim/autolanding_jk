@@ -19,7 +19,7 @@ def evaluate_workspace(workspace, model_type: str, num_episodes: int = 128, enab
     saved if it ends in a failure (crash or timeout), with the outcome and model_type in the filename.
     """
     # Set up a dedicated folder for evaluation videos
-    video_root = workspace.work_dir / "eval_videos"
+    video_root = workspace.work_dir / "eval_video"
     if enable_video_recording:
         video_root.mkdir(parents=True, exist_ok=True)
 
@@ -114,8 +114,8 @@ def evaluate_workspace(workspace, model_type: str, num_episodes: int = 128, enab
 
 @hydra.main(config_path="cfgs", config_name="test_config")
 def my_tests(cfg):
-    # enable_video_recording = True
-    enable_video_recording = False
+    enable_video_recording = True
+    # enable_video_recording = False
     # Prompt to confirm if video recording is not enabled
     if not enable_video_recording:
         response = input("Video recording is disabled. Do you want to proceed? (y/n): ")
@@ -203,7 +203,7 @@ def my_tests(cfg):
 
 
 def setup_exp():
-    num_episodes = 200
+    num_episodes = 100
 
     experiment_settings = [
         # {
@@ -283,12 +283,12 @@ def setup_exp():
         #     "num_episodes": num_episodes,
         #     "snapshot_name": "snapshot.pt",
         # },
-        {
-            "model_type": "drqv2-gimbal-0913-7m-hyprtune-5729k",
-            "target_dir": "/home/user/landing/exp_local/2025.09.13/215446_agent.stddev_clip=0.42,batch_size=512,feature_dim=128,num_train_frames=7000000,replay_buffer_size=500000,stddev_schedule='linear(1.0, 0.01, 6250000)'/",
-            "num_episodes": num_episodes,
-            "snapshot_name": "snapshot_5729k.pt",
-        },
+        # {
+        #     "model_type": "drqv2-gimbal-0913-7m-hyprtune-5729k",
+        #     "target_dir": "/home/user/landing/exp_local/2025.09.13/215446_agent.stddev_clip=0.42,batch_size=512,feature_dim=128,num_train_frames=7000000,replay_buffer_size=500000,stddev_schedule='linear(1.0, 0.01, 6250000)'/",
+        #     "num_episodes": num_episodes,
+        #     "snapshot_name": "snapshot_5729k.pt",
+        # },
         # {
         #     "model_type": "drqv2-gimbal-0913-7m-hyprtune-6270k",
         #     "target_dir": "/home/user/landing/exp_local/2025.09.13/215446_agent.stddev_clip=0.42,batch_size=512,feature_dim=128,num_train_frames=7000000,replay_buffer_size=500000,stddev_schedule='linear(1.0, 0.01, 6250000)'/",
@@ -313,6 +313,12 @@ def setup_exp():
         #     "num_episodes": num_episodes,
         #     "snapshot_name": "snapshot.pt",
         # },
+        {
+            "model_type": "drqv2-gimbal-0924-7m-full",
+            "target_dir": '/home/user/landing/exp_local/2025.09.24/222400_num_train_frames=7000000,seed=23,stddev_schedule="linear(1.0, 0.01, 6250000)"/',
+            "num_episodes": num_episodes,
+            "snapshot_name": "snapshot.pt",
+        },
     ]
 
     return experiment_settings
