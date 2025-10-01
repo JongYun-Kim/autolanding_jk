@@ -379,6 +379,8 @@ class LandingAviary(BaseSingleAgentAviary):
 class LandingGimbalAviary(LandingAviary):
     """Single agent RL: LandingAviary with gimbal control."""
     """
+    Notes
+    - Oracle gimbal's: quaternion--not bounded but angles--bounded
     Todos
     - [o] Expand the action space to include gimbal control
     - [o] Expand the observation space to include gimbal angles
