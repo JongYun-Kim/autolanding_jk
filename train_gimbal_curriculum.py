@@ -55,11 +55,11 @@ class Workspace:
         #                           self.cfg.action_repeat, self.cfg.seed)
         # self.eval_env = dmc.make_with_gimbal(self.cfg.task_name, self.cfg.frame_stack,
         #                          self.cfg.action_repeat, self.cfg.seed)
-        env_kwargs = self._build_env_kwargs_from_cfg(self.cfg)
+        env_kwargs = self._build_env_kwargs_from_cfg(self.cfg.curriculum_preset)
         self.train_env = dmc.make_with_gimbal(self.cfg.task_name, self.cfg.frame_stack, self.cfg.action_repeat,
-                                              self.cfg.seed, **env_kwargs)
+                                              self.cfg.seed, env_kwargs)
         self.eval_env = dmc.make_with_gimbal(self.cfg.task_name, self.cfg.frame_stack, self.cfg.action_repeat,
-                                             self.cfg.seed, **env_kwargs)
+                                             self.cfg.seed, env_kwargs)
 
         # 커리큘럼 초기 스테이지를 양쪽 env에 적용
         if getattr(self, "curr_enabled", False):
@@ -297,7 +297,7 @@ class Workspace:
         print(f"[Curriculum] advanced to stage {self.curr_stage}")
 
 
-@hydra.main(config_path='cfgs', config_name='config_gimbal')
+@hydra.main(config_path='cfgs', config_name='config_gimbal_curriculum')
 def main(cfg):
     root_dir = Path.cwd()
     workspace = Workspace(cfg)

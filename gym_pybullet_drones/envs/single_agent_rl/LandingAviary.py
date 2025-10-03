@@ -881,6 +881,8 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
 
     # 커리큘럼 정의(기본안)
     def _default_curriculum(self) -> List[CurriculumStageSpec]:
+        for _ in range(32):
+            print(f"  [WARNING] Using default curriculum in {self.__class__.__name__}, consider providing a custom curriculum_cfg!")
         return [
             CurriculumStageSpec(  # S0: 짐벌 고정, 보상 off
                 name="S0_lock",
@@ -1008,13 +1010,15 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
         yaw_cmd   = float(np.clip(yaw_cmd,   -1.0, 1.0))
 
         if (not self._stage.gimbal_enabled) or self._stage.lock_down:
-            self.gimbal_target = np.array([0.0, 0.0, 0.0], dtype=np.float32)
-        else:
-            self.gimbal_target = np.array([pitch_cmd, 0.0, yaw_cmd], dtype=np.float32)
+            # self.gimbal_target = np.array([0.0, 0.0, 0.0], dtype=np.float32)
+            pitch_cmd, yaw_cmd = 0.0, 0.0
+        # else:
+            # self.gimbal_target = np.array([pitch_cmd, 0.0, yaw_cmd], dtype=np.float32)
 
         # 2) 드론 속도 명령
-        vel_cmd = action[0:3]
-        obs, reward, done, info = super().step(vel_cmd)
+        action[3] = pitch_cmd
+        action[4] = yaw_cmd
+        obs, reward, done, info = super().step(action)
 
         # 3) 스무딩 패널티(Δnorm^2)
         if self._stage.smooth_penalty > 0.0 and self._stage.gimbal_enabled and (not self._stage.lock_down):

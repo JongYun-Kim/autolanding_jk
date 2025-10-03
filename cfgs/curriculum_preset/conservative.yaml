@@ -1,0 +1,12 @@
+curriculum:
+  enable: true
+  initial_stage: 0
+  window: 60           # 최근 -- 에피소드로 성공률 계산
+  min_episodes: 200    # 최소 -- 에피소드 쌓인 뒤 승급 판단
+  success_rate: 0.85   # 이상이면 승급
+  max_stage: 3         # 스테이지 인덱스 최댓값
+  stages:
+    - {name: S0_lock, gimbal_enabled: false, lock_down: true,  scale: [0.0, 0.0, 0.0], include_viz_reward: false, viz_weight: 0.0,  not_visible_penalty: 0.0,    smooth_penalty: 0.0}
+    - {name: S1_yaw_small, gimbal_enabled: true,  lock_down: false, scale: [0.0, 0.0, 0.12], include_viz_reward: false, viz_weight: 0.0,  not_visible_penalty: -0.010, smooth_penalty: 0.0002, yaw_only: true}
+    - {name: S2_yaw_pitch_small, gimbal_enabled: true, lock_down: false, scale: [0.20, 0.0, 0.30], include_viz_reward: true, viz_weight: 0.04, not_visible_penalty: -0.015, smooth_penalty: 0.0004}
+    - {name: S3_full_moderate, gimbal_enabled: true, lock_down: false, scale: [1.00, 0.0, 1.00], include_viz_reward: true, viz_weight: 0.08, not_visible_penalty: -0.020, smooth_penalty: 0.0008}

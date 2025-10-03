@@ -1,0 +1,13 @@
+curriculum:
+  enable: true
+  initial_stage: 0
+  window: 50
+  min_episodes: 200
+  success_rate: 0.85
+  max_stage: 4
+  stages:
+    - {name: S0_lock, gimbal_enabled: false, lock_down: true,  scale: [0.0, 0.0, 0.0], include_viz_reward: false, viz_weight: 0.0,  not_visible_penalty: 0.0,    smooth_penalty: 0.0}
+    - {name: S1_yaw_small, gimbal_enabled: true,  lock_down: false, scale: [0.0, 0.0, 0.15], include_viz_reward: false, viz_weight: 0.0,  not_visible_penalty: -0.010, smooth_penalty: 0.0001, yaw_only: true}
+    - {name: S2_yaw_pitch_small, gimbal_enabled: true, lock_down: false, scale: [0.25, 0.0, 0.35], include_viz_reward: true, viz_weight: 0.05, not_visible_penalty: -0.015, smooth_penalty: 0.0003}
+    - {name: S3_mid, gimbal_enabled: true, lock_down: false, scale: [0.60, 0.0, 0.60], include_viz_reward: true, viz_weight: 0.10, not_visible_penalty: -0.020, smooth_penalty: 0.0005}
+    - {name: S4_full, gimbal_enabled: true, lock_down: false, scale: [1.00, 0.0, 1.00], include_viz_reward: true, viz_weight: 0.10, not_visible_penalty: -0.025, smooth_penalty: 0.0010}
