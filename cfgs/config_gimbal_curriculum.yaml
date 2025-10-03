@@ -1,0 +1,80 @@
+defaults:
+  - _self_
+  - task@_global_: landing-aviary-v0-gimbal-curriculum
+  - override hydra/launcher: submitit_local
+
+# task settings
+frame_stack: 3
+action_repeat: 1
+discount: 0.99
+# train settings
+num_seed_frames: 4800
+# eval
+eval_every_frames: 30000
+num_eval_episodes: 10
+num_post_eval_episodes: 500
+# snapshot
+save_snapshot: true
+# replay buffer
+replay_buffer_size: 500000
+replay_buffer_num_workers: 4
+nstep: 3
+batch_size: 512
+# misc
+seed: 1
+device: cuda
+save_video: true
+save_train_video: false
+use_tb: true
+# experiment
+experiment: exp
+# agent
+lr: 1.0e-4
+feature_dim: 128
+
+curriculum:
+  enable: true
+  initial_stage: 0
+  # 이동평균 윈도우(최근 N 에피소드)
+  window: 50
+  # 승급 조건
+  min_episodes: 200
+  success_rate: 0.70
+  max_stage: 4  # 0--4
+  stages:
+    - {name: S0_lock, gimbal_enabled: false, lock_down: true,  scale: [0.0, 0.0, 0.0], include_viz_reward: false, viz_weight: 0.0,  not_visible_penalty: 0.0,  smooth_penalty: 0.0}
+    - {name: S1_yaw_small, gimbal_enabled: true,  lock_down: false, scale: [0.0, 0.0, 0.15], include_viz_reward: false, viz_weight: 0.0,  not_visible_penalty: -0.010, smooth_penalty: 0.0001, yaw_only: true}
+    - {name: S2_yaw_pitch_small, gimbal_enabled: true, lock_down: false, scale: [0.25, 0.0, 0.35], include_viz_reward: true, viz_weight: 0.05, not_visible_penalty: -0.015, smooth_penalty: 0.0003}
+    - {name: S3_mid, gimbal_enabled: true, lock_down: false, scale: [0.60, 0.0, 0.60], include_viz_reward: true, viz_weight: 0.10, not_visible_penalty: -0.020, smooth_penalty: 0.0005}
+    - {name: S4_full, gimbal_enabled: true, lock_down: false, scale: [1.0, 0.0, 1.0], include_viz_reward: true, viz_weight: 0.10, not_visible_penalty: -0.025, smooth_penalty: 0.0010}
+
+agent:
+  _target_: drqv2.DrQV2Agent
+  obs_shape: ??? # to be specified later
+  action_shape: ??? # to be specified later
+  device: ${device}
+  lr: ${lr}
+  critic_target_tau: 0.05
+  update_every_steps: 2
+  use_tb: ${use_tb}
+  num_expl_steps: 2000
+  hidden_dim: 512
+  feature_dim: ${feature_dim}
+  stddev_schedule: ${stddev_schedule}
+  stddev_clip: 0.42
+  frame_stack: ${frame_stack}
+
+hydra:
+  run:
+    dir: ./exp_local/${now:%Y.%m.%d}/${now:%H%M%S}_${hydra.job.override_dirname}
+  sweep:
+    dir: ./exp/${now:%Y.%m.%d}/${now:%H%M}_${agent_cfg.experiment}
+    subdir: ${hydra.job.num}
+  launcher:
+    timeout_min: 4300
+    cpus_per_task: 10
+    gpus_per_node: 1
+    tasks_per_node: 1
+    mem_gb: 100
+    nodes: 1
+    submitit_folder: ./exp/${now:%Y.%m.%d}/${now:%H%M%S}_${agent_cfg.experiment}/.slurm

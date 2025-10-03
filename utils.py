@@ -150,3 +150,22 @@ def schedule(schdl, step):
                 mix = np.clip((step - duration1) / duration2, 0.0, 1.0)
                 return (1.0 - mix) * final1 + mix * final2
     raise NotImplementedError(schdl)
+
+
+def compare_dict_keys(base: dict, other: dict):
+    base_keys = set(base.keys())
+    other_keys = set(other.keys())
+
+    missing = base_keys - other_keys   # Keys in base but not in other
+    extra   = other_keys - base_keys   # Keys in other but not in base
+
+    if not missing and not extra:
+        # print("✅ All keys match.")
+        return True
+    else:
+        if missing:
+            print(f"[ERROR] ❌ Missing keys: {missing}")
+
+        if extra:
+            print(f"[ERROR] ❌ Extra keys: {extra}")
+        return ValueError(f"Dict keys do not match between {base.__name__} and {other.__name__}")

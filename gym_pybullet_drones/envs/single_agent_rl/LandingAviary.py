@@ -6,10 +6,15 @@ from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics, ImageType
 from gym_pybullet_drones.envs.single_agent_rl.BaseSingleAgentAviary import ActionType, ObservationType, BaseSingleAgentAviary
 from gym_pybullet_drones.utils.utils import rgb2gray
 from gym_pybullet_drones.utils.camera_visibility_checker import CameraVisibilityChecker
+from utils import compare_dict_keys
 
 import inspect
 from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
+
+import copy
+from dataclasses import dataclass
+from typing import List, Optional, Dict, Any, Tuple
 
 
 class LandingAviary(BaseSingleAgentAviary):
@@ -798,11 +803,11 @@ class LandingGimbalAviary(LandingAviary):
             if crashed:
                 return -1.0
             elif landed:
-                # ONLY FOR DEBUGGING REMOVE the below LATER !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                # ONLY FOR DEBUGGING REMOVE the below LATER !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 if not self.is_target_visible(drone_pos, drone_quat, pad_pos):
                     print("Check self.rgb, drone pos, pad pos etc !!")
                     print("Drone has landed but target not visible!!!")
-                # ONLY FOR DEBUGGING REMOVE the above LATER !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                # ONLY FOR DEBUGGING REMOVE the above LATER !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 # No viz reward unfortunately due to the bug in BaseAviary making the drone go below the pad
                 return 140.0 + self._compute_hv_rewards(drone_pos, drone_vel, pad_pos)  # + self._compute_viz_reward(is_visible=True)
             else:
@@ -813,6 +818,259 @@ class LandingGimbalAviary(LandingAviary):
             return self._compute_hv_rewards(drone_pos, drone_vel, pad_pos) + self._compute_viz_reward(is_visible=True)
         else:
             return self._compute_viz_reward(is_visible=False)
+
+
+@dataclass
+class CurriculumStageSpec:
+    name: str
+    gimbal_enabled: bool               # 짐벌을 할성화 여부
+    lock_down: bool                    # 하향 고정 (action[3:5] 무시)
+    scale: Tuple[float, float, float]  # (pitch, roll, yaw) ∈ [0,1], base range 대비 스케일
+    include_viz_reward: bool           # 시야/정렬 보상 on/off
+    viz_weight: float                  # 정렬 보상 가중치 (cos^5 * weight)
+    not_visible_penalty: float         # 타겟 미가시 시 패널티
+    smooth_penalty: float = 0.0        # 짐벌 변화량 패널티 λ * ||Δangles_norm||^2
+    yaw_only: bool = False             # 이 단계에서 yaw만 허용(피치 0 고정)
+    pitch_only: bool = False           # 필요시 피치만 허용
+    # 추가 옵션 예: assist_ratio, noise_std 등은 필요시 확장
+
+
+class LandingGimbalCurriculumAviary(LandingGimbalAviary):
+    """LandingGimbalAviary + 커리큘럼(범위 스케일/보상 스케줄/액션 마스킹)"""
+
+    def __init__(self,
+                 use_curriculum: bool = True,
+                 curriculum_cfg: Optional[List[CurriculumStageSpec]] = None,
+                 # ↓ 기존 LandingGimbalAviary 인자들 그대로 노출
+                 drone_model: DroneModel = DroneModel.CF2X,
+                 initial_xyzs=None,
+                 initial_rpys=None,
+                 physics: Physics = Physics.PYB_GND_DRAG_DW,
+                 freq: int = 240,
+                 aggregate_phy_steps: int = 10,
+                 gui=False,
+                 record=False,
+                 obs: ObservationType = ObservationType.RGB,
+                 act: ActionType = ActionType.VEL,
+                 episode_len_sec: int = 18,
+                 ):
+        super().__init__(drone_model=drone_model,
+                         initial_xyzs=initial_xyzs,
+                         initial_rpys=initial_rpys,
+                         physics=physics,
+                         freq=freq,
+                         aggregate_phy_steps=aggregate_phy_steps,
+                         gui=gui,
+                         record=record,
+                         obs=obs,
+                         act=act,
+                         episode_len_sec=episode_len_sec)
+
+        # === 커리큘럼 상태 ===
+        self.use_curriculum = use_curriculum
+        self._base_gimbal_angle_ranges = self.gimbal_angle_ranges.copy()  # (3,2)
+        self._curriculum: List[CurriculumStageSpec] = (
+            curriculum_cfg if curriculum_cfg is not None else self._default_curriculum()
+        )
+        self._stage_idx: int = 0
+        self._stage: CurriculumStageSpec = self._curriculum[self._stage_idx]
+        self._prev_gimbal_target = self.initial_gimbal_target.copy()
+
+        if self.use_curriculum:
+            self._apply_stage(self._stage)
+
+    # 커리큘럼 정의(기본안)
+    def _default_curriculum(self) -> List[CurriculumStageSpec]:
+        return [
+            CurriculumStageSpec(  # S0: 짐벌 고정, 보상 off
+                name="S0_lock",
+                gimbal_enabled=False,
+                lock_down=True,
+                scale=(0.0, 0.0, 0.0),
+                include_viz_reward=False,
+                viz_weight=0.0,
+                not_visible_penalty=0.0,
+                smooth_penalty=0.0,
+            ),
+            CurriculumStageSpec(  # S1: Yaw만 좁게, 보상 off
+                name="S1_yaw_small",
+                gimbal_enabled=True,
+                lock_down=False,
+                scale=(0.0, 0.0, 0.15),
+                include_viz_reward=False,
+                viz_weight=0.0,
+                not_visible_penalty=-0.010,
+                smooth_penalty=1e-4,
+                yaw_only=True
+            ),
+            CurriculumStageSpec(  # S2: Pitch+Yaw 소범위, 보상 약하게 on
+                name="S2_yaw_pitch_small",
+                gimbal_enabled=True,
+                lock_down=False,
+                scale=(0.25, 0.0, 0.35),
+                include_viz_reward=True,
+                viz_weight=0.05,
+                not_visible_penalty=-0.015,
+                smooth_penalty=3e-4,
+            ),
+            CurriculumStageSpec(  # S3: 중간 범위, 보상 강화
+                name="S3_mid",
+                gimbal_enabled=True,
+                lock_down=False,
+                scale=(0.60, 0.0, 0.60),
+                include_viz_reward=True,
+                viz_weight=0.10,
+                not_visible_penalty=-0.020,
+                smooth_penalty=5e-4,
+            ),
+            CurriculumStageSpec(  # S4: 풀 범위, 최종
+                name="S4_full",
+                gimbal_enabled=True,
+                lock_down=False,
+                scale=(1.0, 0.0, 1.0),
+                include_viz_reward=True,
+                viz_weight=0.10,
+                not_visible_penalty=-0.025,
+                smooth_penalty=1e-3,
+            ),
+        ]
+
+    # 스테이지 적용/변경 API
+    def set_curriculum_stage(self, stage_idx: int):
+        if stage_idx < 0 or stage_idx >= len(self._curriculum):
+            raise IndexError(f"Invalid curriculum stage index: {stage_idx}")
+        self._stage_idx = stage_idx
+        self._stage = self._curriculum[self._stage_idx]
+        self._apply_stage(self._stage)
+
+    def next_curriculum_stage(self):
+        if self._stage_idx + 1 < len(self._curriculum):
+            self.set_curriculum_stage(self._stage_idx + 1)
+
+    def get_curriculum_info(self) -> Dict[str, Any]:
+        s = self._stage
+        return {
+            "stage_idx": self._stage_idx,
+            "stage_name": s.name,
+            "gimbal_enabled": s.gimbal_enabled,
+            "lock_down": s.lock_down,
+            "scale": s.scale,
+            "include_viz_reward": s.include_viz_reward,
+            "viz_weight": s.viz_weight,
+            "not_visible_penalty": s.not_visible_penalty,
+            "smooth_penalty": s.smooth_penalty,
+            "yaw_only": s.yaw_only,
+            "pitch_only": s.pitch_only,
+            "gimbal_angle_ranges_rad": self.gimbal_angle_ranges.copy(),
+        }
+
+    # 내부 유틸들...
+    def _apply_stage(self, spec: CurriculumStageSpec):
+        """스테이지의 스케일을 현재 짐벌 라디안 범위에 반영(중심 0 기준 대칭 스케일)."""
+        base = self._base_gimbal_angle_ranges  # (3,2): [lo, hi]
+        base_half = np.minimum(np.abs(base[:, 0]), np.abs(base[:, 1]))  # 중심 0 가정
+        scale = np.array(spec.scale, dtype=np.float32)
+        # 대칭 스케일(roll은 사용 안 하면 scale=0으로 유지)
+        new_lo = -scale * base_half
+        new_hi = +scale * base_half
+        self.gimbal_angle_ranges = np.stack([new_lo, new_hi], axis=1).astype(np.float32)
+
+        # 잠금 초기화
+        if spec.lock_down or not spec.gimbal_enabled:
+            self.gimbal_target = self.initial_gimbal_target.copy()
+        self._prev_gimbal_target = self.gimbal_target.copy()
+
+    def _pitch_enabled(self) -> bool:
+        if not self._stage.gimbal_enabled or self._stage.lock_down:
+            return False
+        if self._stage.yaw_only:
+            return False
+        return self._stage.scale[0] > 0.0
+
+    def _yaw_enabled(self) -> bool:
+        if not self._stage.gimbal_enabled or self._stage.lock_down:
+            return False
+        if self._stage.pitch_only:
+            return False
+        return self._stage.scale[2] > 0.0
+
+    def step(self, action):
+        """
+        액션(5D)은 항상 받되, 현재 스테이지에 따라 짐벌 성분을 마스킹/클램핑하여 self.gimbal_target 갱신.
+        이후 상위 step(vel) 호출 → 보상 계산은 이 클래스의 _compute_viz_reward로 가중 조정.
+        """
+        # 1) 짐벌 타겟 업데이트(정규화 영역)
+        pitch_cmd = float(action[3]) if self._pitch_enabled() else 0.0
+        yaw_cmd   = float(action[4]) if self._yaw_enabled() else 0.0
+
+        # 안정성: [-1,1] 클램프
+        pitch_cmd = float(np.clip(pitch_cmd, -1.0, 1.0))
+        yaw_cmd   = float(np.clip(yaw_cmd,   -1.0, 1.0))
+
+        if (not self._stage.gimbal_enabled) or self._stage.lock_down:
+            self.gimbal_target = np.array([0.0, 0.0, 0.0], dtype=np.float32)
+        else:
+            self.gimbal_target = np.array([pitch_cmd, 0.0, yaw_cmd], dtype=np.float32)
+
+        # 2) 드론 속도 명령
+        vel_cmd = action[0:3]
+        obs, reward, done, info = super().step(vel_cmd)
+
+        # 3) 스무딩 패널티(Δnorm^2)
+        if self._stage.smooth_penalty > 0.0 and self._stage.gimbal_enabled and (not self._stage.lock_down):
+            delta = self.gimbal_target - self._prev_gimbal_target
+            reward -= float(self._stage.smooth_penalty) * float(np.dot(delta, delta))
+
+        self._prev_gimbal_target = self.gimbal_target.copy()
+
+        # 4) 로깅/마스크 정보
+        info = info or {}
+        info.update({
+            "curriculum_stage": self._stage_idx,
+            "stage_name": self._stage.name,
+            "gimbal_scale": tuple(float(s) for s in self._stage.scale),
+            "gimbal_enabled": bool(self._stage.gimbal_enabled and not self._stage.lock_down),
+            "gimbal_action_mask": np.array([
+                1, 1, 1,
+                1 if self._pitch_enabled() else 0,
+                1 if self._yaw_enabled()   else 0
+            ], dtype=np.int32),
+            "viz_weight": float(self._stage.viz_weight),
+            "not_visible_penalty": float(self._stage.not_visible_penalty),
+            "smooth_penalty": float(self._stage.smooth_penalty),
+        })
+        return obs, reward, done, info
+
+    def _compute_viz_reward(self, is_visible: bool):
+        """
+        기본 클래스의 구조는 유지하되, 현재 스테이지에 맞춰 가중치/패널티를 적용.
+        - visible: cos^5 정렬값 * viz_weight
+        - not visible: not_visible_penalty
+        """
+        if (not self.use_curriculum) or (not self._stage.include_viz_reward):
+            # 커리큘럼 미사용 또는 이 단계에서 보상 끈 경우
+            return 0.0
+
+        if is_visible:
+            # --- 아래는 부모 클래스의 정렬 계산 로직을 재현 ---
+            oracle = self.compute_oracle_gimbal()
+            R_oracle = R.from_quat(oracle['quat']).as_matrix()
+            f_oracle = R_oracle @ self._cam_dir_local
+            f_oracle /= (np.linalg.norm(f_oracle) + 1e-12)
+
+            f_curr = self._forward_from_norm_angles(self.gimbal_target)
+            cos_align = float(np.clip(np.dot(f_curr, f_oracle), -1.0, 1.0))
+            cos_sharp = cos_align ** 5  # 날카롭게
+            return float(self._stage.viz_weight) * cos_sharp
+        else:
+            return float(self._stage.not_visible_penalty)
+
+    def reset(self):
+        if self.use_curriculum:
+            # 스테이지 재적용(하향 고정 등)
+            self._apply_stage(self._stage)
+        self._prev_gimbal_target = self.gimbal_target.copy()
+        return super().reset()
 
 
 def show_rgb(rgb):
