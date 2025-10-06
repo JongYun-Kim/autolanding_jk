@@ -57,7 +57,6 @@ class LandingAviary(BaseSingleAgentAviary):
             The type of observation space (kinematic information or vision)
         act : ActionType, optional
             The type of action space (1 or 3D; RPMS, thurst and torques, or waypoint with PID control)
-
         """
         print("In [gym_pybullet_drones] LandingAviary inits..$")
         super().__init__(drone_model=drone_model,
@@ -82,7 +81,7 @@ class LandingAviary(BaseSingleAgentAviary):
     def video_camera(self):
         nth_drone = 0
         gv_pos = np.array(self._get_vehicle_position()[0])
-        #### Set target point, camera view and projection matrices #
+        # Set target point, camera view and projection matrices
         target = gv_pos#np.dot(rot_mat, np.array([0, 0, -1000])) + np.array(self.pos[nth_drone, :])
 
         DRONE_CAM_VIEW = p.computeViewMatrix(cameraEyePosition=self.pos[nth_drone, :] + np.array([0, 0, 0.5]) +np.array([0, 0, self.L]),
@@ -107,60 +106,6 @@ class LandingAviary(BaseSingleAgentAviary):
                                                  )
 
         return rgb
-    
-    def _computeReward_evil(self):
-        """Computes the current reward value.
-        Returns
-        -------
-        float
-            The reward.
-        """
-        vz_max = -0.5
-        gv_pos = np.array(self._get_vehicle_position()[0])
-        drone_state = self._getDroneStateVector(0)
-        drone_pos = drone_state[0:3]
-        drone_v = drone_state[10:13]
-        error_xy = np.linalg.norm(drone_pos[0:2]-gv_pos[0:2])
-        error_z = np.linalg.norm(drone_pos[2]-gv_pos[2])
-
-        flag_land = drone_pos[2] >= 0.05 and p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ()
-        flag_crash = drone_pos[2] < 0.05 and p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ()
-
-        error_z = error_z + 4
-
-        theta_l = 20
-        theta = np.rad2deg(np.arctan2(abs(error_xy), error_z))
-        r = (error_xy ** 2 + error_z ** 2) ** 0.5
-
-        reward_r = 2 - r / 5
-        reward_theta = 4 / (1 + np.e ** ((theta - theta_l) / 3)) + 2 / (1 + np.e**((theta-6)/2)) - 2
-
-        if drone_v[2]>0:
-            reward_vz = -1
-        elif drone_v[2]>-0.3:
-            reward_vz = -0.3
-        elif drone_v[2]>-0.6:
-            reward_vz = 1
-        elif drone_v[2]>-0.8:
-            reward_vz = -0.8
-        elif np.linalg.norm(drone_v)/self.SPEED_LIMIT[2] > 1.2:
-            reward_vz = -0.8
-        else:
-            reward_vz = -1.5
-
-
-        reward = reward_r + reward_theta + reward_vz
-
-
-        if flag_crash:
-            print('crashed!')
-            reward = -300
-
-        if flag_land:
-            print('landed!')
-            reward = 5000 * np.e ** (-abs(drone_v[2] + 0.5))
-
-        return reward
 
     def _computeReward(self):
         reward = self._computeReward_good()
@@ -215,11 +160,6 @@ class LandingAviary(BaseSingleAgentAviary):
         else:
             reward_z = 0
         combined_reward = 0.6*reward_xy + 1.0*reward_z_velocity#+ 0.2*reward_z + reward_z_velocity #np.tanh(reward_z_velocity) #+ reward_xy_velocity
-        #print(distance_xy)
-        #combined_reward = np.sum(combined_reward)
-        #if combined_reward < 0:
-        #    print(drone_velocity)
-        #    exit()
         if drone_position[2] >= self.desired_landing_altitude and p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ():
             print('landed!')
             combined_reward =  140 + combined_reward
@@ -232,15 +172,6 @@ class LandingAviary(BaseSingleAgentAviary):
         distance_y = np.abs(drone_position[1]-UGV_pos[1])
         if np.abs(angle) > 30 and (distance_y > 0.8 and distance_x > 0.8):
             combined_reward = -0.01
-        #print(combined_reward)
-        #print('z velocity reward')
-        #print(reward_z_velocity)
-        #print('z distance reward')
-        #print(reward_z)
-        #print('xy error reward')
-        #print(reward_xy)
-        #print('combined reward')
-        #print(combined_reward)
         return combined_reward
 
     def _computeDone(self):
@@ -302,15 +233,14 @@ class LandingAviary(BaseSingleAgentAviary):
         """Normalizes a drone's state to the [-1,1] range.
 
         Parameters
-        ----------
+        --
         state : ndarray
             (20,)-shaped array of floats containing the non-normalized state of a single drone.
 
         Returns
-        -------
+        --
         ndarray
             (20,)-shaped array of floats containing the normalized state of a single drone.
-
         """
         MAX_LIN_VEL_XY = 3 
         MAX_LIN_VEL_Z = 1
@@ -781,10 +711,6 @@ class LandingGimbalAviary(LandingAviary):
             cos_align = float(np.clip(np.dot(f_curr, f_oracle), -1.0, 1.0))
             cos_align = cos_align**5  # let's make it sharper with cheaper computation
             # -1(정반대), 0(직교), 1(정렬)
-            # print(f"cos_align: {cos_align:.4f}")
-            # print(f"    f_curr:   {f_curr}")
-            # print(f"    f_oracle: {f_oracle}")
-            # print(f"    ")
             return 0.1 * cos_align  # 스케일은 필요에 따라 튜닝
         else:
             return -0.025
@@ -803,11 +729,11 @@ class LandingGimbalAviary(LandingAviary):
             if crashed:
                 return -1.0
             elif landed:
-                # ONLY FOR DEBUGGING REMOVE the below LATER !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                # ONLY FOR DEBUGGING REMOVE the below LATER !!
                 if not self.is_target_visible(drone_pos, drone_quat, pad_pos):
                     print("Check self.rgb, drone pos, pad pos etc !!")
                     print("Drone has landed but target not visible!!!")
-                # ONLY FOR DEBUGGING REMOVE the above LATER !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                # ONLY FOR DEBUGGING REMOVE the above LATER !!
                 # No viz reward unfortunately due to the bug in BaseAviary making the drone go below the pad
                 return 140.0 + self._compute_hv_rewards(drone_pos, drone_vel, pad_pos)  # + self._compute_viz_reward(is_visible=True)
             else:
@@ -1114,12 +1040,10 @@ def main():
         print(f"step {t+1} gimbal_euler [deg]: yaw={yaw:.2f}, pitch={pitch:.2f}, roll={roll:.2f}; quat: {quat}")
         print(f"  Target Visibility: {env.is_target_visible()}; Reward: {rew:.3f}")
 
-        # print(f"step {t+1}: step counter={env.step_counter}")
         # show_rgb(env.rgb)
 
         if t % 6 == 0:
             show_rgb(env.rgb)
-            # print(env.is_target_visible())
         if done:
             break
 
