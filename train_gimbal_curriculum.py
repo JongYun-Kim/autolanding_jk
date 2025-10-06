@@ -180,7 +180,7 @@ class Workspace:
                     self.train_video_recorder.save(f'{self.global_frame}.mp4')
                 self._global_episode += 1
 
-                # ---- 커리큘럼: 에피소드 성공/실패 집계 및 스테이지 전환 ----
+                # 커리큘럼: 에피소드 성공/실패 집계 및 스테이지 전환
                 if getattr(self, "curr_enabled", False):
                     ep_success = bool(time_step.landing_info)  # 마지막 타임스텝에 설정됨
                     self.success_hist.append(1 if ep_success else 0)
@@ -243,6 +243,13 @@ class Workspace:
             episode_step += 1
             self._global_step += 1
 
+        # Finalize: eval and save snapshot
+        self.logger.log('eval_total_time', self.timer.total_time(), self.global_frame)
+        self.eval()
+        # 스냅샷 저장 (커리큘럼 상태 포함)
+        if getattr(self, "curr_enabled", False):
+            self.save_stage_checkpoint(tag="final")
+
     def save_snapshot(self):
         snapshot = self.work_dir / 'snapshot.pt'
         keys_to_save = ['agent', 'timer', '_global_step', '_global_episode']
@@ -256,8 +263,51 @@ class Workspace:
             keys_to_save.append("curriculum_state")
 
         payload = {k: self.__dict__[k] for k in keys_to_save}
+
+        # 커리큘럼 상태 포함
+        if getattr(self, "curr_enabled", False):
+            payload["curriculum_state"] = {
+                "enabled": True,
+                "stage": self.curr_stage,
+                "success_hist": list(self.success_hist),
+            }
+
         with snapshot.open('wb') as f:
             torch.save(payload, f)
+
+    def save_stage_checkpoint(self, tag: str = ""):
+        """
+        커리큘럼 스테이지 종료 시 저장하는 전용 체크포인트.
+        파일명 예: snapshot_stage2_S3_mid_120000.pt
+        """
+
+        if not getattr(self, "curr_enabled", False):
+            return
+        # 스테이지 이름 얻기 (eval_env/train_env 어느 쪽이든 동일 스테이지를 유지)
+        try:
+            info = self.train_env.get_curriculum_info()
+            stage_idx = info["stage_idx"]
+            stage_name = info["stage_name"]
+        except Exception:
+            stage_idx = int(self.curr_stage) if self.curr_stage is not None else -1
+            stage_name = f"S{stage_idx}"
+        safe_name = str(stage_name).replace("/", "_").replace(" ", "")
+        fname = f"snapshot_stage{stage_idx}_{safe_name}_{self.global_frame}"
+        if tag:
+            fname += f"_{tag}"
+        fname += ".pt"
+        path = self.work_dir / fname
+        keys_to_save = ['agent', 'timer', '_global_step', '_global_episode']
+        payload = {k: self.__dict__[k] for k in keys_to_save}
+        payload["curriculum_state"] = {
+            "enabled": True,
+            "stage": self.curr_stage,
+            "success_hist": list(self.success_hist),
+            "stage_name": stage_name,
+        }
+        with path.open('wb') as f:
+            torch.save(payload, f)
+        print(f"[Curriculum] Saved stage checkpoint: {path}")
 
     def load_snapshot(self, checkpoint_dir=None):
         if checkpoint_dir is None:
@@ -291,6 +341,9 @@ class Workspace:
         return sr >= cfgc.success_rate
 
     def _advance_curriculum_stage(self):
+        # 1) 현재 스테이지를 "마감"하며 스냅샷 저장
+        self.save_stage_checkpoint(tag="end_of_stage")
+        # 2) 다음 스테이지로 승급
         self.curr_stage += 1
         self.train_env.set_curriculum_stage(self.curr_stage)
         self.eval_env.set_curriculum_stage(self.curr_stage)
