@@ -12,20 +12,24 @@ import torchvision
 from termcolor import colored
 from torch.utils.tensorboard import SummaryWriter
 
-COMMON_TRAIN_FORMAT = [('frame', 'F', 'int'), ('step', 'S', 'int'),
-                       ('episode', 'E', 'int'), ('episode_length', 'L', 'int'),
-                       ('episode_reward', 'R', 'float'),
-                       ('buffer_size', 'BS', 'int'), ('fps', 'FPS', 'float'),
-                       ('total_time', 'T', 'time'),
-                       ('curriculum_stage', 'CS', 'int'),
-                       ('success_rate_window', 'SR', 'float')]
+COMMON_TRAIN_FORMAT = [
+    ('frame', 'F', 'int'), ('step', 'S', 'int'),
+    ('episode', 'E', 'int'), ('episode_length', 'L', 'int'),
+    ('episode_reward', 'R', 'float'),
+    ('buffer_size', 'BS', 'int'), ('fps', 'FPS', 'float'),
+    ('total_time', 'T', 'time'),
+    ('curriculum_stage', 'CS', 'int'),
+    ('success_rate_window', 'SR', 'float'),
+]
 
-COMMON_EVAL_FORMAT = [('frame', 'F', 'int'), ('step', 'S', 'int'),
-                      ('episode', 'E', 'int'), ('episode_length', 'L', 'int'),
-                      ('episode_reward', 'R', 'float'),
-                      ('total_time', 'T', 'time'),
-                      ('curriculum_stage', 'CS', 'int'),
-                      ('success_rate_window', 'SR', 'float')]
+COMMON_EVAL_FORMAT = [
+    ('frame', 'F', 'int'), ('step', 'S', 'int'),
+    ('episode', 'E', 'int'), ('episode_length', 'L', 'int'),
+    ('episode_reward', 'R', 'float'),
+    ('total_time', 'T', 'time'),
+    ('curriculum_stage', 'CS', 'int'),
+    # ('success_rate_window', 'SR', 'float'),
+]
 
 
 class AverageMeter(object):

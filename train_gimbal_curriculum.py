@@ -43,9 +43,9 @@ class Workspace:
         self._global_episode = 0
 
         # Curriculum learning state
-        self.curr_enabled = getattr(self.cfg, "curriculum", None) is not None and self.cfg.curriculum_preset.enable
-        self.curr_stage = (self.cfg.curriculum_preset.initial_stage if self.curr_enabled else None)
-        self.success_hist = deque(maxlen=(self.cfg.curriculum_preset.window if self.curr_enabled else 1))
+        self.curr_enabled = getattr(self.cfg, "curriculum_preset", None) is not None and self.cfg.curriculum_preset.curriculum.enable
+        self.curr_stage = (self.cfg.curriculum_preset.curriculum.initial_stage if self.curr_enabled else None)
+        self.success_hist = deque(maxlen=(self.cfg.curriculum_preset.curriculum.window if self.curr_enabled else 1))
 
     def setup(self):
         # create logger
@@ -63,8 +63,8 @@ class Workspace:
 
         # 커리큘럼 초기 스테이지를 양쪽 env에 적용
         if getattr(self, "curr_enabled", False):
-            self.train_env.set_curriculum_stage(self.cfg.curriculum_preset.initial_stage)
-            self.eval_env.set_curriculum_stage(self.cfg.curriculum_preset.initial_stage)
+            self.train_env.set_curriculum_stage(self.cfg.curriculum_preset.curriculum.initial_stage)
+            self.eval_env.set_curriculum_stage(self.cfg.curriculum_preset.curriculum.initial_stage)
 
         # create replay buffer
         data_specs = (self.train_env.observation_spec(),
@@ -88,11 +88,12 @@ class Workspace:
 
     def _build_env_kwargs_from_cfg(self, cfg):
         # 커리큘럼 비사용: 빈 kwargs
-        if not (hasattr(cfg, "curriculum") and cfg.curriculum.enable):
+        preset = cfg
+        if not (hasattr(preset, "curriculum") and preset.curriculum.enable):
             return {}
         # Hydra YAML -> dataclass 리스트
         stages = []
-        for s in cfg.curriculum.stages:
+        for s in preset.curriculum.stages:
             stages.append(CurriculumStageSpec(
                 name = s.name,
                 gimbal_enabled = bool(s.gimbal_enabled),
@@ -332,7 +333,7 @@ class Workspace:
 
     # 커리큘럼 판단/승급 로직
     def _should_advance_curriculum(self):
-        cfgc = self.cfg.curriculum_preset
+        cfgc = self.cfg.curriculum_preset.curriculum
         if self.curr_stage >= cfgc.max_stage:
             return False
         if len(self.success_hist) < cfgc.min_episodes:
