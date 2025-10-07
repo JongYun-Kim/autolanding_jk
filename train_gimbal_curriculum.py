@@ -46,6 +46,11 @@ class Workspace:
         self.curr_enabled = getattr(self.cfg, "curriculum_preset", None) is not None and self.cfg.curriculum_preset.curriculum.enable
         self.curr_stage = (self.cfg.curriculum_preset.curriculum.initial_stage if self.curr_enabled else None)
         self.success_hist = deque(maxlen=(self.cfg.curriculum_preset.curriculum.window if self.curr_enabled else 1))
+        if self.curr_enabled:
+            print(f"[Curriculum] Enabled. Starting at stage {self.curr_stage}.")
+            # min_episodes must not be greater than window; if so, then the agent can never advance!!
+            assert self.cfg.curriculum_preset.curriculum.min_episodes <= self.cfg.curriculum_preset.curriculum.window, \
+                "curriculum.min_episodes must not be greater than curriculum.window"
 
     def setup(self):
         # create logger

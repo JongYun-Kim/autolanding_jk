@@ -2,7 +2,7 @@ curriculum:
   enable: true
   initial_stage: 0
   window: 60           # 최근 -- 에피소드로 성공률 계산
-  min_episodes: 200    # 최소 -- 에피소드 쌓인 뒤 승급 판단
+  min_episodes: 59    # 최소 -- 에피소드 쌓인 뒤 승급 판단
   success_rate: 0.85   # 이상이면 승급
   max_stage: 3         # 스테이지 인덱스 최댓값
   stages:

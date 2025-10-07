@@ -2,8 +2,8 @@ curriculum:
   enable: true
   initial_stage: 0
   window: 40
-  min_episodes: 200
-  success_rate: 0.85
+  min_episodes: 39
+  success_rate: 0.82
   max_stage: 3
   stages:
     - {name: S0_short_lock, gimbal_enabled: false, lock_down: true,  scale: [0.0, 0.0, 0.0], include_viz_reward: false, viz_weight: 0.0,  not_visible_penalty: 0.0,    smooth_penalty: 0.0}
