@@ -5,16 +5,10 @@
 from collections import deque
 from typing import Any, NamedTuple
 
-#import dm_env
 import numpy as np
 import enum
-#from dm_control import manipulation, suite
-#from dm_control.suite.wrappers import action_scale, pixels
-#from dm_env import StepType, specs
 from gym_pybullet_drones.utils.Logger import Logger
 from gym_pybullet_drones.utils.specs import BoundedArray, Array
-from gym_pybullet_drones.envs.single_agent_rl.TakeoffAviary import TakeoffAviary
-from gym_pybullet_drones.utils.utils import sync, str2bool
 import gym
 import copy
 
