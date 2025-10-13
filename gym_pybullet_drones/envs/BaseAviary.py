@@ -1,11 +1,9 @@
 import os
-from sys import platform
 import time
 import collections
 from datetime import datetime
 from enum import Enum
 import xml.etree.ElementTree as etxml
-from PIL import Image
 import numpy as np
 import pybullet as p
 import pybullet_data
@@ -14,11 +12,6 @@ from PIL import Image
 import itertools
 import glob
 import random
-import copy
-import cv2
-import matplotlib
-from blurgenerator import motion_blur
-import shutil
 
 
 class DroneModel(Enum):

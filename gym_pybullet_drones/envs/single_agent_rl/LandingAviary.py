@@ -6,13 +6,11 @@ from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics, ImageType
 from gym_pybullet_drones.envs.single_agent_rl.BaseSingleAgentAviary import ActionType, ObservationType, BaseSingleAgentAviary
 from gym_pybullet_drones.utils.utils import rgb2gray
 from gym_pybullet_drones.utils.camera_visibility_checker import CameraVisibilityChecker
-from utils import compare_dict_keys
 
 import inspect
 from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
 
-import copy
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Any, Tuple
 

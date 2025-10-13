@@ -1,11 +1,9 @@
 import os
-from datetime import datetime
 from enum import Enum
-import numpy as np
 from gym import spaces
 import pybullet as p
-import pybullet_data
-from ...utils.utils import rgb2gray
+import numpy as np
+from gym_pybullet_drones.utils.utils import rgb2gray
 import random
 from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics, ImageType, BaseAviary
 from gym_pybullet_drones.utils.utils import nnlsRPM
@@ -13,7 +11,6 @@ from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
 from gym_pybullet_drones.control.SimplePIDControl import SimplePIDControl
 import cv2
 
-from PIL import Image
 
 class ActionType(Enum):
     """Action type enumeration class."""
