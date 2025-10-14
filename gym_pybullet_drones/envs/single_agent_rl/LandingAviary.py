@@ -1,5 +1,5 @@
 import numpy as np
-from gym import spaces
+from gymnasium import spaces
 import pybullet as p
 
 from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics, ImageType
@@ -649,9 +649,9 @@ class LandingGimbalAviary(LandingAviary):
         )
         return visibility
 
-    def reset(self):
+    def reset(self, **kwargs):
         self.gimbal_target = self.initial_gimbal_target
-        return super().reset()
+        return super().reset(**kwargs)
 
     def step(self, action):
         # ★ gimbal action 반영: pitch=action[3], yaw=action[4], roll은 0 고정
@@ -993,12 +993,12 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
         else:
             return float(self._stage.not_visible_penalty)
 
-    def reset(self):
+    def reset(self, **kwargs):
         if self.use_curriculum:
             # 스테이지 재적용(하향 고정 등)
             self._apply_stage(self._stage)
         self._prev_gimbal_target = self.gimbal_target.copy()
-        return super().reset()
+        return super().reset(**kwargs)
 
 
 def show_rgb(rgb):

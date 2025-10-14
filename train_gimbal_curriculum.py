@@ -356,7 +356,7 @@ class Workspace:
         print(f"[Curriculum] advanced to stage {self.curr_stage}")
 
 
-@hydra.main(config_path='cfgs', config_name='config_gimbal_curriculum')
+@hydra.main(version_base="1.3", config_path="cfgs", config_name="config_gimbal_curriculum")
 def main(cfg):
     root_dir = Path.cwd()
     workspace = Workspace(cfg)

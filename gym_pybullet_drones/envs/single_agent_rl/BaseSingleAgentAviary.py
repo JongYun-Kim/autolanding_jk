@@ -1,6 +1,6 @@
 import os
 from enum import Enum
-from gym import spaces
+from gymnasium import spaces
 import pybullet as p
 import numpy as np
 from gym_pybullet_drones.utils.utils import rgb2gray

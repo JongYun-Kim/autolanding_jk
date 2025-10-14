@@ -7,12 +7,12 @@ import xml.etree.ElementTree as etxml
 import numpy as np
 import pybullet as p
 import pybullet_data
-import gym
+import gymnasium as gym
 from PIL import Image
 import itertools
 import glob
 import random
-
+from compat import legacy_iface_class
 
 class DroneModel(Enum):
     """Drone models enumeration class."""
@@ -42,6 +42,7 @@ class ImageType(Enum):
     BW = 3      # Black and white
 
 
+@legacy_iface_class
 class BaseAviary(gym.Env):
     """Base class for "drone aviary" Gym environments."""
     metadata = {'render.modes': ['human']}
@@ -474,7 +475,7 @@ class BaseAviary(gym.Env):
 
         self.gv_straight_speed = self.v_des / 36.0  # NEW UPDATE
 
-    def reset(self):
+    def reset(self, **kwargs):
         """Resets the environment.
 
         Returns

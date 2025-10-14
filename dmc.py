@@ -9,7 +9,7 @@ import numpy as np
 import enum
 from gym_pybullet_drones.utils.Logger import Logger
 from gym_pybullet_drones.utils.specs import BoundedArray, Array
-import gym
+import gymnasium as gym
 import copy
 
 
@@ -80,8 +80,8 @@ class ActionRepeatWrapper():
     def action_spec(self):
         return self._env.action_spec()
 
-    def reset(self):
-        return self._env.reset()
+    def reset(self, **kwargs):
+        return self._env.reset(**kwargs)
 
     def __getattr__(self, name):
         return getattr(self._env, name)
@@ -128,8 +128,8 @@ class FrameStackWrapper(gym.Wrapper):
             pixels = pixels[0]
         return pixels#.transpose(2, 0, 1).copy()
 
-    def reset(self):
-        time_step = self.env.reset().astype(int)
+    def reset(self, **kwargs):
+        time_step = self.env.reset(**kwargs).astype(int)
         pixels = time_step#.transpose(2, 0, 1).copy()
         #pixels = np.pad(pixels, ((0, 0), (0, 1), (0, 1)), mode='constant')
         next_velocity = copy.deepcopy(self.env.vel[0,:])/self.env.SPEED_LIMIT
@@ -170,10 +170,7 @@ class FrameStackWrapper(gym.Wrapper):
     def get_uav_velocity(self):
         return self.env.vel[0,:]
 
-    # def __getattr__(self, name):
-    #     return getattr(self._env, name)
-
-    def __getattr__(self, name): # TODO: 지피티가 준거니까 고쳐라 다시 위에 코맨트 해둠
+    def __getattr__(self, name):
         return getattr(self.env, name)
 
 class FrameStackWrapperWithGimbalState(FrameStackWrapper):
@@ -189,8 +186,8 @@ class FrameStackWrapperWithGimbalState(FrameStackWrapper):
     def drone_state_spec(self):
         return BoundedArray((self._num_frames, 11), np.float32, minimum = -1, maximum = 1, name = 'drone_state')
 
-    def reset(self):
-        time_step = self.env.reset().astype(int)
+    def reset(self, **kwargs):
+        time_step = self.env.reset(**kwargs).astype(int)
         pixels = time_step
 
         next_velocity = copy.deepcopy(self.env.vel[0,:])/self.env.SPEED_LIMIT
@@ -234,8 +231,8 @@ class ExtendedTimeStepWrapper(gym.Wrapper):
         super().__init__(env)
         pass
 
-    def reset(self):
-        time_step = self.env.reset()
+    def reset(self, **kwargs):
+        time_step = self.env.reset(**kwargs)
         return self._augment_time_step(time_step, step_type = StepType.FIRST)
 
     def step(self, action):
@@ -279,13 +276,17 @@ class ExtendedTimeStepWrapper(gym.Wrapper):
                                 drone_state = time_step[-1],
                                 position_error = position_error)#time_step.discount or 1.0)
 
+    def __getattr__(self, name):
+        return getattr(self.env, name)
+
+
 
 class MultiRewardExtendedTimeStepWrapper(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
 
-    def reset(self):
-        time_step = self.env.reset()
+    def reset(self, **kwargs):
+        time_step = self.env.reset(**kwargs)
         return self._augment_time_step(time_step, step_type = StepType.FIRST)
 
     def step(self, action):
