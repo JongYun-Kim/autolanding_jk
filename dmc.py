@@ -1,13 +1,8 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
-#
-# This source code is licensed under the MIT license found in the
-# LICENSE file in the root directory of this source tree.
 from collections import deque
 from typing import Any, NamedTuple
 
 import numpy as np
 import enum
-from gym_pybullet_drones.utils.Logger import Logger
 from gym_pybullet_drones.utils.specs import BoundedArray, Array
 import gym
 import copy
@@ -131,20 +126,13 @@ class FrameStackWrapper(gym.Wrapper):
     def reset(self):
         time_step = self.env.reset().astype(int)
         pixels = time_step#.transpose(2, 0, 1).copy()
-        #pixels = np.pad(pixels, ((0, 0), (0, 1), (0, 1)), mode='constant')
         next_velocity = copy.deepcopy(self.env.vel[0,:])/self.env.SPEED_LIMIT
         next_attitude = copy.deepcopy(self.env.quat[0,:])
-        #next_delay = np.array([copy.deepcopy(self.env.AGGR_PHY_STEPS)/11])
-        #drone_state = np.concatenate((next_velocity,next_attitude,next_delay))[None,:].astype(np.float32)
         drone_state = np.concatenate((next_velocity,next_attitude))[None,:].astype(np.float32)
-        #pixels[0,84,0:7] = drone_state[0,:]*255
         for _ in range(self._num_frames):
             self._frames.append(pixels)
             self._drone_states.append(drone_state)
         return self._transform_observation(time_step)
-
-    #def get_sim_time(self):
-    #    return self.env.get_sim_time()
 
     def step(self, action):
         time_step = self.env.step(action)
@@ -170,11 +158,9 @@ class FrameStackWrapper(gym.Wrapper):
     def get_uav_velocity(self):
         return self.env.vel[0,:]
 
-    # def __getattr__(self, name):
-    #     return getattr(self._env, name)
-
-    def __getattr__(self, name): # TODO: 지피티가 준거니까 고쳐라 다시 위에 코맨트 해둠
+    def __getattr__(self, name):
         return getattr(self.env, name)
+
 
 class FrameStackWrapperWithGimbalState(FrameStackWrapper):
     def __init__(self, env, num_frames, pixels_key='pixels'):
@@ -203,9 +189,6 @@ class FrameStackWrapperWithGimbalState(FrameStackWrapper):
             self._drone_states.append(drone_state)
 
         return self._transform_observation(time_step)
-
-    #def get_sim_time(self):
-    #    return self.env.get_sim_time()
 
     def step(self, action):
         time_step = self.env.step(action)
@@ -268,8 +251,6 @@ class ExtendedTimeStepWrapper(gym.Wrapper):
         else:
             reward = time_step[1]
 
-        #add landing info
-
         return ExtendedTimeStep(observation=time_step[0],
                                 step_type=step_type,
                                 action=action,
@@ -299,7 +280,7 @@ class MultiRewardExtendedTimeStepWrapper(gym.Wrapper):
     def _augment_time_step(self, time_step, action=None, step_type = None):
         if  step_type == StepType.FIRST:
             discount = 1.0
-            landing_info = False#time_step[3]["landing"]
+            landing_info = False
             position_error = [0.0, 0.0]
         elif time_step[3]["episode end flag"] == True:
             discount = 0.0

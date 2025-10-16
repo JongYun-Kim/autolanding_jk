@@ -56,10 +56,6 @@ class Workspace:
         # create logger
         self.logger = Logger(self.work_dir, use_tb=self.cfg.use_tb)
         # create envs
-        # self.train_env = dmc.make_with_gimbal(self.cfg.task_name, self.cfg.frame_stack,
-        #                           self.cfg.action_repeat, self.cfg.seed)
-        # self.eval_env = dmc.make_with_gimbal(self.cfg.task_name, self.cfg.frame_stack,
-        #                          self.cfg.action_repeat, self.cfg.seed)
         env_kwargs = self._build_env_kwargs_from_cfg(self.cfg.curriculum_preset)
         self.train_env = dmc.make_with_gimbal(self.cfg.task_name, self.cfg.frame_stack, self.cfg.action_repeat,
                                               self.cfg.seed, env_kwargs)
@@ -147,7 +143,6 @@ class Workspace:
                                             self.global_step,
                                             time_step.drone_state,
                                             eval_mode=True)
-                #  action = np.append(action, -0.45).astype(np.float32)    # meraj
                 time_step = self.eval_env.step(action)
                 self.video_recorder.record(self.eval_env)
                 total_reward += time_step.reward

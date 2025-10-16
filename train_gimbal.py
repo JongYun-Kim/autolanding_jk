@@ -8,9 +8,7 @@ os.environ['MUJOCO_GL'] = 'egl'
 from pathlib import Path
 
 import hydra
-import numpy as np
 import torch
-from gym_pybullet_drones.utils import specs
 
 import dmc
 import utils
@@ -52,7 +50,6 @@ class Workspace:
                                   self.cfg.action_repeat, self.cfg.seed)
         self.eval_env = dmc.make_with_gimbal(self.cfg.task_name, self.cfg.frame_stack,
                                  self.cfg.action_repeat, self.cfg.seed)
-        #self.eval_env = self.train_env
         # create replay buffer
         data_specs = (self.train_env.observation_spec(),
                       self.train_env.action_spec(),
@@ -104,7 +101,6 @@ class Workspace:
                                             self.global_step,
                                             time_step.drone_state,
                                             eval_mode=True)
-                #  action = np.append(action, -0.45).astype(np.float32)    # meraj
                 time_step = self.eval_env.step(action)
                 self.video_recorder.record(self.eval_env)
                 total_reward += time_step.reward

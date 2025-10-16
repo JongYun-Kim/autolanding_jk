@@ -54,13 +54,13 @@ class BaseSingleAgentAviary(BaseAviary):
         vision applications; `user_debug_gui` is set to False for performance.
 
         Parameters
-        ----------
+        --
         drone_model : DroneModel, optional
             The desired drone type (detailed in an .urdf file in folder `assets`).
         initial_xyzs: ndarray | None, optional
-            (NUM_DRONES, 3)-shaped array containing the initial XYZ position of the drones.
+            (NUM_DRONES, 3) array; the initial XYZ position of the drones.
         initial_rpys: ndarray | None, optional
-            (NUM_DRONES, 3)-shaped array containing the initial orientations of the drones (in radians).
+            (NUM_DRONES, 3) array; the initial orientations of the drones (in radians).
         physics : Physics, optional
             The desired implementation of PyBullet physics/custom dynamics.
         freq : int, optional
@@ -68,14 +68,11 @@ class BaseSingleAgentAviary(BaseAviary):
         aggregate_phy_steps : int, optional
             The number of physics steps within one call to `BaseAviary.step()`.
         gui : bool, optional
-            Whether to use PyBullet's GUI.
         record : bool, optional
-            Whether to save a video of the simulation in folder `files/videos/`.
         obs : ObservationType, optional
             The type of observation space (kinematic information or vision)
         act : ActionType, optional
             The type of action space (1 or 3D; RPMS, thurst and torques, waypoint or velocity with PID control; etc.)
-
         """
         vision_attributes = True if obs == ObservationType.RGB else False
         dynamics_attributes = True if act in [ActionType.DYN, ActionType.ONE_D_DYN] else False
@@ -130,12 +127,6 @@ class BaseSingleAgentAviary(BaseAviary):
         self.max_episode_steps = int(self.EPISODE_LEN_SEC*self.SIM_FREQ/self.AGGR_PHY_STEPS)
 
     def _addObstacles(self):
-        """Add obstacles to the environment.
-
-        Only if the observation is of type RGB, 4 landmarks are added.
-        Overrides BaseAviary's method.
-
-        """
         if self.OBS_TYPE == ObservationType.RGB:
             p.loadURDF("block.urdf",
                        [1, 0, .1],
@@ -164,10 +155,9 @@ class BaseSingleAgentAviary(BaseAviary):
         """Returns the action space of the environment.
 
         Returns
-        -------
+        --
         ndarray
             A Box() of size 1, 3, 4, or 6 depending on the action type.
-
         """
         if self.ACT_TYPE == ActionType.TUN:
             size = 6
@@ -196,12 +186,12 @@ class BaseSingleAgentAviary(BaseAviary):
         using PID control, a desired velocity vector, new PID coefficients, etc.
 
         Parameters
-        ----------
+        --
         action : ndarray
             The input action for each drone, to be translated into RPMs.
 
         Returns
-        -------
+        --
         ndarray
             (4,)-shaped array of ints containing to clipped RPMs
             commanded to the 4 motors of each drone.
@@ -251,11 +241,9 @@ class BaseSingleAgentAviary(BaseAviary):
                 v_unit_vector = action[0:3] / np.linalg.norm(action[0:3])
             else:
                 v_unit_vector = np.zeros(3)
-            #it is necessary to limit velocity changes in smooth manner, otherwise controller goes crazy
+            # It is necessary to limit velocity changes in smooth manner, otherwise controller goes crazy
             target_vel = 0.15 * (self.SPEED_LIMIT * action[0:3]) + 0.85 * state[10:13]
-            #target_vel = target_vel + np.random.uniform(low=-0.1, high=0.1, size=(target_vel.shape))
-            #target_vel = self.SPEED_LIMIT * action[0:3]
-            rpm, _, _ = self.ctrl.computeControl(control_timestep=self.AGGR_PHY_STEPS*self.TIMESTEP, 
+            rpm, _, _ = self.ctrl.computeControl(control_timestep=self.AGGR_PHY_STEPS*self.TIMESTEP,
                                                  cur_pos=state[0:3],
                                                  cur_quat=state[3:7],
                                                  cur_vel=state[10:13],
@@ -298,10 +286,9 @@ class BaseSingleAgentAviary(BaseAviary):
         """Returns the observation space of the environment.
 
         Returns
-        -------
+        --
         ndarray
             A Box() of shape (H,W,4) or (12,) depending on the observation type.
-
         """
         if self.OBS_TYPE == ObservationType.RGB:
             return spaces.Box(low=0,
@@ -310,12 +297,6 @@ class BaseSingleAgentAviary(BaseAviary):
                               dtype=np.uint8
                               )
         elif self.OBS_TYPE == ObservationType.KIN:
-            # OBS OF SIZE 20 (WITH QUATERNION AND RPMS)
-            #### Observation vector ### X        Y        Z       Q1   Q2   Q3   Q4   R       P       Y       VX       VY       VZ       WX       WY       WZ       P0            P1            P2            P3
-            # obs_lower_bound = np.array([-1,      -1,      0,      -1,  -1,  -1,  -1,  -1,     -1,     -1,     -1,      -1,      -1,      -1,      -1,      -1,      -1,           -1,           -1,           -1])
-            # obs_upper_bound = np.array([1,       1,       1,      1,   1,   1,   1,   1,      1,      1,      1,       1,       1,       1,       1,       1,       1,            1,            1,            1])          
-            # return spaces.Box( low=obs_lower_bound, high=obs_upper_bound, dtype=np.float32 )
-            # OBS SPACE OF SIZE 12
             return spaces.Box(low=np.array([-1,-1,0, -1,-1,-1, -1,-1,-1, -1,-1,-1]),
                               high=np.array([1,1,1, 1,1,1, 1,1,1, 1,1,1]),
                               dtype=np.float32
@@ -374,7 +355,7 @@ class BaseSingleAgentAviary(BaseAviary):
         """Returns the current observation of the environment.
 
         Returns
-        -------
+        --
         ndarray
             A Box() of shape (H,W,4) or (12,) depending on the observation type.
 
@@ -385,9 +366,6 @@ class BaseSingleAgentAviary(BaseAviary):
                 self.rgb, self.dep[0], self.seg[0] = self._getDroneImages(0,
                                                                              segmentation=False
                                                                              )
-                #im = Image.fromarray(self.rgb.transpose(1, 2, 0), 'RGBA')
-                #im.save("your_file_3.png")     
-                #### Printing observation to PNG frames example ############
                 if self.RECORD:
                     self._exportImage(img_type=ImageType.RGB,
                                       img_input=self.rgb,
@@ -398,13 +376,7 @@ class BaseSingleAgentAviary(BaseAviary):
             return self.rgb
         elif self.OBS_TYPE == ObservationType.KIN: 
             obs = self._clipAndNormalizeState(self._getDroneStateVector(0))
-            ############################################################
-            #### OBS OF SIZE 20 (WITH QUATERNION AND RPMS)
-            # return obs
-            ############################################################
-            #### OBS SPACE OF SIZE 12
             return np.hstack([obs[0:3], obs[7:10], obs[10:13], obs[13:16]]).reshape(12,)
-            ############################################################
         else:
             print("[ERROR] in BaseSingleAgentAviary._computeObs()")
 
@@ -416,9 +388,8 @@ class BaseSingleAgentAviary(BaseAviary):
         Must be implemented in a subclass.
 
         Parameters
-        ----------
+        --
         state : ndarray
             Array containing the non-normalized state of a single drone.
-
         """
         raise NotImplementedError

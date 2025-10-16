@@ -42,15 +42,12 @@ class LandingAviary(BaseSingleAgentAviary):
         initial_rpys: ndarray | None, optional
             (NUM_DRONES, 3)-shaped array containing the initial orientations of the drones (in radians).
         physics : Physics, optional
-            The desired implementation of PyBullet physics/custom dynamics.
         freq : int, optional
             The frequency (Hz) at which the physics engine steps.
         aggregate_phy_steps : int, optional
             The number of physics steps within one call to `BaseAviary.step()`.
         gui : bool, optional
-            Whether to use PyBullet's GUI.
         record : bool, optional
-            Whether to save a video of the simulation in folder `files/videos/`.
         obs : ObservationType, optional
             The type of observation space (kinematic information or vision)
         act : ActionType, optional
@@ -80,7 +77,7 @@ class LandingAviary(BaseSingleAgentAviary):
         nth_drone = 0
         gv_pos = np.array(self._get_vehicle_position()[0])
         # Set target point, camera view and projection matrices
-        target = gv_pos#np.dot(rot_mat, np.array([0, 0, -1000])) + np.array(self.pos[nth_drone, :])
+        target = gv_pos
 
         DRONE_CAM_VIEW = p.computeViewMatrix(cameraEyePosition=self.pos[nth_drone, :] + np.array([0, 0, 0.5]) +np.array([0, 0, self.L]),
                                              cameraTargetPosition=target,
@@ -112,58 +109,39 @@ class LandingAviary(BaseSingleAgentAviary):
     def _computeReward_good(self):
         """Computes the current reward value.
         Returns
-        -------
+        --
         float
             The reward.
         """
-        lambda_error = 1/3
         desired_z_velocity = -0.5
-        #eventually it will become speed of ground vehicle
-        desired_xy_velocity = 0.0
         alpha = 30
         UGV_pos = np.array(self._get_vehicle_position()[0])
-        UGV_vel = self._get_vehicle_velocity()
         drone_state = self._getDroneStateVector(0)
         drone_position = drone_state[0:3]
         drone_velocity = drone_state[10:13]
-        velocity_error = np.linalg.norm(drone_velocity)
-        #velocity_reward = velocity_error
-        #distance_xy = np.linalg.norm(drone_position[0:2]-UGV_pos[0:2])
-        #distance_z = np.linalg.norm(drone_position[2]-UGV_pos[2])
-        #distance_reward = (alpha*distance_xy+beta*distance_z)/10
-        #combined_reward = -(gamma*distance_reward**2+zeta*velocity_error**2)
-        position_errors = np.abs(drone_position - UGV_pos)
         distance_xy = np.linalg.norm(drone_position[0:2]-UGV_pos[0:2])
         distance_z = np.linalg.norm(drone_position[2:3]-UGV_pos[2:3])
         velocity_z_flag = (0 > drone_velocity[2]) * (drone_velocity[2] > desired_z_velocity)
         reward_z_velocity = (alpha**(drone_velocity[2]/desired_z_velocity) -1)/(alpha -1)
         angle = np.rad2deg(np.arctan2(distance_xy,distance_z))
-        #punishment for excessive z velocity
+        # punishment for excessive z velocity
         if velocity_z_flag == False:
             if drone_velocity[2] < desired_z_velocity:
-                reward_z_velocity = -0.01#-abs(drone_velocity[2]/self.SPEED_LIMIT[2])**2
+                reward_z_velocity = -0.01
             else:
-                reward_z_velocity = -0.1#- 10*drone_velocity[2]
+                reward_z_velocity = -0.1
             if abs(drone_velocity[2])/self.SPEED_LIMIT[2] > 1.1:
-                reward_z_velocity = 0#reward_z_velocity -5
-        #reward_xy_velocity = np.sum(-np.abs(drone_velocity[0:2]- desired_xy_velocity))
+                reward_z_velocity = 0
         if distance_xy < 10:
             normalized_distance_xy = 0.1*(10 - distance_xy)
             reward_xy = (30**normalized_distance_xy -1)/(30 -1)
         else:
-            reward_xy = 0 #-distance_xy
-        if distance_z < 10:
-            normalized_distance_z = 0.1*(10-distance_z)
-            reward_z = (30**normalized_distance_z -1)/(30 -1)
-        else:
-            reward_z = 0
-        combined_reward = 0.6*reward_xy + 1.0*reward_z_velocity#+ 0.2*reward_z + reward_z_velocity #np.tanh(reward_z_velocity) #+ reward_xy_velocity
+            reward_xy = 0
+        combined_reward = 0.6*reward_xy + 1.0*reward_z_velocity
         if drone_position[2] >= self.desired_landing_altitude and p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ():
-            print('landed!')
             combined_reward =  140 + combined_reward
         elif drone_position[2]  < self.desired_landing_altitude and p.getContactPoints(bodyA=1, physicsClientId=self.CLIENT) != ():
-            print('crashed!')
-            combined_reward = -1 #normalized_distance_xy * 10 #0#5*distance_xy + combined_reward
+            combined_reward = -1
         else:
             combined_reward =  combined_reward
         distance_x = np.abs(drone_position[0]-UGV_pos[0])
@@ -306,7 +284,6 @@ class LandingAviary(BaseSingleAgentAviary):
             print("[WARNING] it", self.step_counter, "in TakeoffAviary._clipAndNormalizeState(), clipped xy velocity [{:.2f} {:.2f}]".format(state[10], state[11]))
         if not(clipped_vel_z == np.array(state[12])).all():
             print("[WARNING] it", self.step_counter, "in TakeoffAviary._clipAndNormalizeState(), clipped z velocity [{:.2f}]".format(state[12]))
-    # for cross compatibility with dm gym
 
 
 class LandingGimbalAviary(LandingAviary):
@@ -335,8 +312,6 @@ class LandingGimbalAviary(LandingAviary):
                  act: ActionType=ActionType.VEL,
                  episode_len_sec: int=18,
                  ):
-        """Initialization of a single agent RL environment with gimbal control."""
-        print("In [gym_pybullet_drones] LandingGimbalAviary inits..$")
 
         self._cam_dir_local = np.array([0.0, 0.0, -1.0], dtype=np.float64)  # camera forward (-z)
         self._cam_up_local  = np.array([1.0, 0.0, 0.0], dtype=np.float64)   # camera up (+x)
@@ -346,7 +321,7 @@ class LandingGimbalAviary(LandingAviary):
         self._cam_up_world = None
         self._cam_pos_world = None
 
-        # FOV/프로젝션 (오라클과 동일하게)
+        # FOV/프로젝션 (오라클과 동일)
         self._fov_deg = 85.7
         self._near = 0.03
         self._far = 100.0
@@ -619,8 +594,7 @@ class LandingGimbalAviary(LandingAviary):
     def is_target_visible(self, drone_position, drone_quaternion, pad_position):
 
         # Pad geometry
-        # pad_pos = np.array(self._get_vehicle_position()[0])
-        # pad_hf = 0.2875 #2875gives0.1margin  # Helipad - visual shape: (0.675, 0.675, 0), collision shape: (0.5, 0.5, 0)
+        # pad_hf = 0.2875 # gives 0.1 margin # Helipad - visual shape: (0.675, 0.675, 0), collision shape: (0.5, 0.5, 0)
         pad_hf = 0.3375
         pad_corners = np.array([
             [ pad_hf,  pad_hf, 0.0],
@@ -654,7 +628,7 @@ class LandingGimbalAviary(LandingAviary):
         return super().reset()
 
     def step(self, action):
-        # ★ gimbal action 반영: pitch=action[3], yaw=action[4], roll은 0 고정
+        # gimbal action 반영: pitch=action[3], yaw=action[4], roll 0 고정
         self.gimbal_target = np.array([action[3], 0.0, action[4]], dtype=np.float32)
         if not np.all(np.abs(self.gimbal_target) <= 1.0 + 1e-9):
             raise ValueError(f"Gimbal target angles must be in [-1, 1], got {self.gimbal_target}")
@@ -670,16 +644,16 @@ class LandingGimbalAviary(LandingAviary):
         # punishment for excessive z velocity
         if velocity_z_flag == False:
             if drone_velocity[2] < desired_z_velocity:
-                reward_z_velocity = -0.01  # -abs(drone_velocity[2]/self.SPEED_LIMIT[2])**2
+                reward_z_velocity = -0.01
             else:
-                reward_z_velocity = -0.1  # - 10*drone_velocity[2]
+                reward_z_velocity = -0.1
             if abs(drone_velocity[2]) / self.SPEED_LIMIT[2] > 1.1:
-                reward_z_velocity = 0  # reward_z_velocity -5
+                reward_z_velocity = 0
         if distance_xy < 8:
             normalized_distance_xy = 0.125 * (8 - distance_xy)
             reward_xy = (30 ** normalized_distance_xy - 1) / (30 - 1)
         else:
-            reward_xy = 0  # -distance_xy
+            reward_xy = 0
         combined_reward = 0.56 * reward_xy + 1.0 * reward_z_velocity
 
         return combined_reward
@@ -690,8 +664,8 @@ class LandingGimbalAviary(LandingAviary):
         pitch_rad, _, yaw_rad = self._norm_to_rad(angles_norm)
         Rg = self._gimbal_rot_from_angles(pitch_rad, 0.0, yaw_rad)  # (3,3) in camera-local basis
         f_local = Rg @ self._cam_dir_local  # camera-local forward mapped in camera local (여기선 같지만 명시)
-        # 위 f_local은 '카메라 로컬 기준' 벡터. 보상에서 오라클과 같은 기준이면 충분합니다.
-        # 굳이 드론 로컬로 옮기고 싶다면: f_drone = f_local (카메라축 자체가 드론 로컬 축에 정의됨)
+        # 위 f_local은 '카메라 로컬 기준' 벡터. 보상에서 오라클과 같은 기준이면 충분.
+        # 굳이 드론 로컬로 옮기고 싶다면: f_drone = f_local (카메라축 자체가 드론 로컬 축에 정의)
         return f_local / (np.linalg.norm(f_local) + 1e-12)
 
     def _compute_viz_reward(self, is_visible):
@@ -702,7 +676,7 @@ class LandingGimbalAviary(LandingAviary):
             f_oracle = R_oracle @ self._cam_dir_local
             f_oracle /= (np.linalg.norm(f_oracle) + 1e-12)
 
-            # Get gimbal forward (현재 액션/타겟에서 직접 계산)
+            # Get gimbal forward (현재 타겟에서 직접 계산)
             f_curr = self._forward_from_norm_angles(self.gimbal_target)
 
             # Compute cosine alignment
@@ -727,11 +701,6 @@ class LandingGimbalAviary(LandingAviary):
             if crashed:
                 return -1.0
             elif landed:
-                # ONLY FOR DEBUGGING REMOVE the below LATER !!
-                if not self.is_target_visible(drone_pos, drone_quat, pad_pos):
-                    print("Check self.rgb, drone pos, pad pos etc !!")
-                    print("Drone has landed but target not visible!!!")
-                # ONLY FOR DEBUGGING REMOVE the above LATER !!
                 # No viz reward unfortunately due to the bug in BaseAviary making the drone go below the pad
                 return 140.0 + self._compute_hv_rewards(drone_pos, drone_vel, pad_pos)  # + self._compute_viz_reward(is_visible=True)
             else:
@@ -756,7 +725,6 @@ class CurriculumStageSpec:
     smooth_penalty: float = 0.0        # 짐벌 변화량 패널티 λ * ||Δangles_norm||^2
     yaw_only: bool = False             # 이 단계에서 yaw만 허용(피치 0 고정)
     pitch_only: bool = False           # 필요시 피치만 허용
-    # 추가 옵션 예: assist_ratio, noise_std 등은 필요시 확장
 
 
 class LandingGimbalCurriculumAviary(LandingGimbalAviary):
@@ -765,7 +733,7 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
     def __init__(self,
                  use_curriculum: bool = True,
                  curriculum_cfg: Optional[List[CurriculumStageSpec]] = None,
-                 # ↓ 기존 LandingGimbalAviary 인자들 그대로 노출
+                 # 부모 클래스 인자
                  drone_model: DroneModel = DroneModel.CF2X,
                  initial_xyzs=None,
                  initial_rpys=None,
@@ -790,7 +758,7 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
                          act=act,
                          episode_len_sec=episode_len_sec)
 
-        # === 커리큘럼 상태 ===
+        # 커리큘럼 상태
         self.use_curriculum = use_curriculum
         self._base_gimbal_angle_ranges = self.gimbal_angle_ranges.copy()  # (3,2)
         self._curriculum: List[CurriculumStageSpec] = (
@@ -803,7 +771,7 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
         if self.use_curriculum:
             self._apply_stage(self._stage)
 
-    # 커리큘럼 정의(기본안)
+    # 기본 Curriculum
     def _default_curriculum(self) -> List[CurriculumStageSpec]:
         for _ in range(32):
             print(f"  [WARNING] Using default curriculum in {self.__class__.__name__}, consider providing a custom curriculum_cfg!")
@@ -890,7 +858,6 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
             "gimbal_angle_ranges_rad": self.gimbal_angle_ranges.copy(),
         }
 
-    # 내부 유틸들...
     def _apply_stage(self, spec: CurriculumStageSpec):
         """스테이지의 스케일을 현재 짐벌 라디안 범위에 반영(중심 0 기준 대칭 스케일)."""
         base = self._base_gimbal_angle_ranges  # (3,2): [lo, hi]
@@ -980,7 +947,7 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
             return 0.0
 
         if is_visible:
-            # --- 아래는 부모 클래스의 정렬 계산 로직을 재현 ---
+            # 아래는 부모 클래스의 정렬 계산 로직을 재현
             oracle = self.compute_oracle_gimbal()
             R_oracle = R.from_quat(oracle['quat']).as_matrix()
             f_oracle = R_oracle @ self._cam_dir_local

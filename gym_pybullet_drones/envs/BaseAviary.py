@@ -16,15 +16,13 @@ import random
 
 class DroneModel(Enum):
     """Drone models enumeration class."""
-
-    CF2X = "cf2x"   # Bitcraze Craziflie 2.0 in the X configuration
-    CF2P = "cf2p"   # Bitcraze Craziflie 2.0 in the + configuration
+    CF2X = "cf2x"   # Bitcraze Craziflie 2.0 in the X config
+    CF2P = "cf2p"   # Bitcraze Craziflie 2.0 in the + config
     HB = "hb"       # Generic quadrotor (with AscTec Hummingbird inertial properties)
 
 
 class Physics(Enum):
     """Physics implementations enumeration class."""
-
     PYB = "pyb"                         # Base PyBullet physics update
     DYN = "dyn"                         # Update with an explicit model of the dynamics
     PYB_GND = "pyb_gnd"                 # PyBullet physics update with ground effect
@@ -35,7 +33,6 @@ class Physics(Enum):
 
 class ImageType(Enum):
     """Camera capture image type enumeration class."""
-
     RGB = 0     # Red, green, blue (and alpha)
     DEP = 1     # Depth
     SEG = 2     # Segmentation by object id
@@ -66,7 +63,7 @@ class BaseAviary(gym.Env):
         """Initialization of a generic aviary environment.
 
         Parameters
-        ----------
+        --
         drone_model : DroneModel, optional
             The desired drone type (detailed in an .urdf file in folder `assets`).
         num_drones : int, optional
@@ -117,7 +114,6 @@ class BaseAviary(gym.Env):
         self.OBSTACLES = obstacles
         self.USER_DEBUG = user_debug_gui
         self.URDF = self.DRONE_MODEL.value + ".urdf"
-        # Load the drone properties from the .urdf file
         self.M, \
         self.L, \
         self.THRUST2WEIGHT_RATIO, \
@@ -153,7 +149,7 @@ class BaseAviary(gym.Env):
         if self.VISION_ATTR:
             self.IMG_RES = np.array([84, 84])
     
-            ##parameter for distortion
+            # parameter for distortion
             self.IMG_RES_org = [84, 84]
 
             self.num_step_repeats = None
@@ -224,7 +220,6 @@ class BaseAviary(gym.Env):
         # Set initial poses
         assert initial_xyzs is None or initial_xyzs.shape == (self.NUM_DRONES,3), "[ERROR] initial_xyzs should be (NUM_DRONES,3) or None"
         if initial_xyzs is None:
-            # self.INIT_XYZS = np.array([[5.0, 7.0, 2.5]])
             self.INIT_XYZS = None
         elif np.array(initial_xyzs).shape == (self.NUM_DRONES,3):
             self.INIT_XYZS = initial_xyzs
@@ -240,23 +235,21 @@ class BaseAviary(gym.Env):
         self.action_space = self._actionSpace()
         self.observation_space = self._observationSpace()
 
-        ## Image distortion
+        # Image distortion
         self.distortion = False
         self.distorted_points, self.image_points = self._initialize_image_distortion()
         
-        ## Housekeeping
+        # Housekeeping
         self._housekeeping()
-        ## Update and store the drones kinematic information #####
+        # Update and store the drones kinematic information
         self._updateAndStoreKinematicInformation()
-        ## Start video recording
+        # Start video recording
         self._startVideoRecording()
-        ## Load the ground vehicle
-        #self._initialize_ground_vehicle()
-        ##initialise lists for positions
+        #initialise lists for positions
         if self.RECORD_CHASE:
             self.gv_poss_list = []
             self.uav_poss_list = []
-        self.urdf_necessary_not_sure_why_counter = 0
+        self.parsed_urdf_idx = 0
 
     def _initialize_image_distortion(self):
         width = self.IMG_RES[1]
@@ -272,7 +265,6 @@ class BaseAviary(gym.Env):
         k3 = 0
         p1 = 0
         p2 = 0
-        
 
         f = np.array([fy, fx])
         c = np.array([cy, cx])
@@ -298,9 +290,7 @@ class BaseAviary(gym.Env):
         delta = 2 * p * norm_points_xy[:, None] + p[::-1] * r2_plus_2_point_sq
 
         distorted_points = (norm_points + delta) * icdist[:, None]
-
         distorted_points = distorted_points * f + c
-
         distorted_points = distorted_points.round().astype(int)
 
         in_image_idx = np.all(
@@ -341,7 +331,7 @@ class BaseAviary(gym.Env):
         with open(self.original_base_obj, 'r') as f:
             obj_contents = f.readlines()
         # Replace the mtllib line with the updated value
-        new_mtllib_line = "mtllib base{}.mtl\n".format(self.urdf_necessary_not_sure_why_counter)
+        new_mtllib_line = "mtllib base{}.mtl\n".format(self.parsed_urdf_idx)
         for i, line in enumerate(obj_contents):
             if line.startswith("mtllib"):
                 obj_contents[i] = new_mtllib_line
@@ -383,46 +373,40 @@ class BaseAviary(gym.Env):
         car_version = 7
         self.xacro_file = "/home/user/resources/g_vehicle/car_v{}.urdf".format(car_version)  # car_v2: sim, car_v4: real landing pad images
         # Path to the file to be parsed
-        self.urdf_necessary_not_sure_why_counter = (1+self.urdf_necessary_not_sure_why_counter) % 1000
-        self.urdf_file = "/home/user/resources/g_vehicle/parsed_files_2/parsed_{}_real_pad.urdf".format(self.urdf_necessary_not_sure_why_counter)
-        self.new_base_mtl = "/home/user/resources/g_vehicle/parsed_files_2/base{}.mtl".format(self.urdf_necessary_not_sure_why_counter)
-        self.new_base_obj = "/home/user/resources/g_vehicle/parsed_files_2/base{}.obj".format(self.urdf_necessary_not_sure_why_counter)
-        self.original_base_mtl ="/home/user/resources/g_vehicle/base.mtl"
-        self.original_base_obj ="/home/user/resources/g_vehicle/base.obj"
-        real_pad_path = random.choice(os.listdir("/home/user/resources/transformed_2"))
-        # print(real_pad_path)
+        self.parsed_urdf_idx = (1 + self.parsed_urdf_idx) % 1000
+        resource_dir = "/home/user/resources/"
+        vehicle_dir = resource_dir + "g_vehicle/"
+        parsed_dir = vehicle_dir + "parsed_files_2/"
+        self.urdf_file = parsed_dir + "parsed_{}_real_pad.urdf".format(self.parsed_urdf_idx)
+        self.new_base_mtl = parsed_dir + "base{}.mtl".format(self.parsed_urdf_idx)
+        self.new_base_obj = parsed_dir + "base{}.obj".format(self.parsed_urdf_idx)
+        self.original_base_mtl = vehicle_dir + "base.mtl"
+        self.original_base_obj = vehicle_dir + "base.obj"
+        real_pad_path = random.choice(os.listdir(resource_dir + "transformed_2"))
         with open(self.xacro_file, 'r+') as mycar:
             lines = mycar.readlines()
             for index, line in enumerate(lines):
                 if '<mesh filename=' in line:
-                    lines[index] = '        <mesh filename="base{}.obj" scale="3.375 3.375 1"/>\n'.format(self.urdf_necessary_not_sure_why_counter)
+                    lines[index] = '        <mesh filename="base{}.obj" scale="3.375 3.375 1"/>\n'.format(self.parsed_urdf_idx)
                     break
             mycar.seek(0)
             mycar.truncate(0)
             mycar.writelines(lines)
         self.copy_texture_files(real_pad_path)
         
-        # random.seed(544)
         # Desired GV init position
         self.gv_pos = [5.,7.,0.]
-        # Desired velocity
         # GV starting yaw angle
-        # yaw = random.uniform(-np.pi/12.0, np.pi/12.0)
         yaw = random.uniform(-np.pi, np.pi)
         self.gv_heading = yaw
         
-        base_color = [1.0, 1.0, 1.0, 1.0]
-        circle_color = [1.0, 0.1, 0.1, 1.0]
         plane_color = [1.0, 1.0, 1.0, 1.0]
 
         parser_command = 'xacro ' + self.xacro_file + ' > ' + self.urdf_file
         os.system(parser_command)
 
         # Path to the dtd file
-        dtd_path = '/home/user/resources/dtd'
-        # dtd_path = '/home/user/resources/minc/minc-2500'
-        if 'minc' in dtd_path:
-            print("[INFO] Using MINC dataset for textures. IT MUST BE IN TESTING MODE!")
+        dtd_path = resource_dir + 'dtd'  # other data set: 'minc/minc-2500'
         random_texture = True
         if random_texture:
             texture_paths = glob.glob(os.path.join(dtd_path, '**', '*.jpg'), recursive=True)
@@ -433,11 +417,6 @@ class BaseAviary(gym.Env):
 
         # Get pad id
         self.vehicleId = p.loadURDF(self.urdf_file, basePosition = self.gv_pos, physicsClientId=self.CLIENT, baseOrientation = [0,0,np.sin(yaw/2),np.cos(yaw/2)])
-        pad_path = "/home/user/resources/transformed_2/" + real_pad_path
-        #pad_texture = p.loadTexture(pad_path, physicsClientId=self.CLIENT)
-        #elif car_version == 4:
-        #    p.changeVisualShape(objectUniqueId = self.vehicleId, linkIndex = 8, textureUniqueId= pad_texture)
-        # p.changeVisualShape(objectUniqueId = self.vehicleId, linkIndex =9, rgbaColor = base_color, textureUniqueId= pad_texture, )
 
         num_objects = random.randint(0, 25)
         if random.random() < 0.5:
@@ -450,27 +429,18 @@ class BaseAviary(gym.Env):
 
             p.createMultiBody(baseMass=0, baseCollisionShapeIndex=-1, baseVisualShapeIndex=visual_shape,
                             basePosition=position, baseOrientation=orientation, physicsClientId=self.CLIENT)
-        self.wheel_joint_indices = [2, 3, 5, 6] # rear left, rear right, front left, front right
+        self.wheel_joint_indices = [2, 3, 5, 6] # rear-left, rear-right, front-left, front-right
         self.max_forces = [600] * 4
-        if car_version == 5:
-            self.gv_velocity = [5, 10, 10, 5] # desired velocity of each wheel
-            p.setJointMotorControlArray(bodyUniqueId=self.vehicleId,
-                                jointIndices=self.wheel_joint_indices,
-                                controlMode=p.VELOCITY_CONTROL,
-                                targetVelocities=self.gv_velocity,
-                                forces=self.max_forces,
-                                physicsClientId=self.CLIENT)
-        if car_version >= 6:
-            self.steering_bar_joint_index = 4
-            self.gv_L = abs(p.getLinkState(self.vehicleId, linkIndex=2, physicsClientId=self.CLIENT)[0][0]) * 2
-            self.gv_w = abs(p.getLinkState(self.vehicleId, linkIndex=2, physicsClientId=self.CLIENT)[0][1]) * 2
-            self.tr_shape = random.randint(0, 4)
-            stationary_flag = random.random()
-            #self.v_des = 18 - 18*np.random.rand()
-            if stationary_flag > 0.7:
-                self.v_des = 0.0
-            else:
-                self.v_des = 18 - 18*np.random.rand()
+
+        self.steering_bar_joint_index = 4
+        self.gv_L = abs(p.getLinkState(self.vehicleId, linkIndex=2, physicsClientId=self.CLIENT)[0][0]) * 2
+        self.gv_w = abs(p.getLinkState(self.vehicleId, linkIndex=2, physicsClientId=self.CLIENT)[0][1]) * 2
+        self.tr_shape = random.randint(0, 4)
+        stationary_flag = random.random()
+        if stationary_flag > 0.7:
+            self.v_des = 0.0
+        else:
+            self.v_des = 18 - 18*np.random.rand()
 
         self.gv_straight_speed = self.v_des / 36.0  # NEW UPDATE
 
@@ -478,7 +448,7 @@ class BaseAviary(gym.Env):
         """Resets the environment.
 
         Returns
-        -------
+        --
         ndarray | dict[..]
             The initial observation, check the specific implementation of `_computeObs()`
             in each subclass for its format.
@@ -494,8 +464,6 @@ class BaseAviary(gym.Env):
         self._updateAndStoreKinematicInformation()
         # Start video recording
         self._startVideoRecording()
-        # Reloads the ground vehicle
-        #self._load_ground_vehicle()
         # Return the initial observation
         return self._computeObs()
 
@@ -525,7 +493,6 @@ class BaseAviary(gym.Env):
         in the `reset()` function.
         """
         # Drone's random initial position(s): given + (-1,1) random offset
-        # self.INIT_XYZS_random = (-1+(2*np.random.rand(*self.INIT_XYZS.shape))) + self.INIT_XYZS
         self.INIT_XYZS_random = self._get_random_drone_init_pos(self.INIT_XYZS)
         # Initialize/reset counters and zero-valued variables
         self.RESET_TIME = time.time()
@@ -643,10 +610,9 @@ class BaseAviary(gym.Env):
             return [v_des] * 4
 
     def step(self, action):
-        # print("\nStep starts... in BaseAviary..!\n")
         if self.step_counter % 25 == 0:
-            self.tr_shape = 5#random.randint(0, 4)
-            self.steering = 0#self._gv_steering_calculator(v_des=self.v_des, trajectory_shape=self.tr_shape)
+            self.tr_shape = 5
+            self.steering = 0
             self.gv_velocity = self._gv_wheel_commander(v_des=self.v_des, steering_angle=self.steering, control_method='smooth')
         p.setJointMotorControlArray(bodyUniqueId=self.vehicleId,
                             jointIndices=self.wheel_joint_indices,
@@ -664,13 +630,13 @@ class BaseAviary(gym.Env):
             """Advances the environment by one simulation step.
             
             Parameters
-            ----------
+            --
             action : ndarray | dict[..]
                 The input action for one or more drones, translated into RPMs by
                 the specific implementation of `_preprocessAction()` in each subclass.
 
             Returns
-            -------
+            --
             ndarray | dict[..]
                 The step's observation, check the specific implementation of `_computeObs()`
                 in each subclass for its format.
@@ -754,7 +720,7 @@ class BaseAviary(gym.Env):
                 # PyBullet computes the new state, unless Physics.DYN
                 if self.PHYSICS != Physics.DYN:
                     p.stepSimulation(physicsClientId=self.CLIENT)
-                # === NEW Update: manual straight-line update of the ground vehicle
+                # Manual straight-line update of the ground vehicle
                 if hasattr(self, "vehicleId"):
                     gv_pos, gv_ori = p.getBasePositionAndOrientation(self.vehicleId, physicsClientId=self.CLIENT)
                     # extract yaw from quaternion
@@ -765,7 +731,6 @@ class BaseAviary(gym.Env):
                     new_gv_pos = [gv_pos[0] + dx, gv_pos[1] + dy, gv_pos[2]]
                     # reset the base pose so it “drives” straight
                     p.resetBasePositionAndOrientation(self.vehicleId, new_gv_pos, gv_ori, physicsClientId=self.CLIENT)
-                # === NEW Update
                 # Save the last applied action (e.g. to compute drag)
                 self.last_clipped_action = clipped_action
                 obs = self._computeObs()
@@ -777,7 +742,6 @@ class BaseAviary(gym.Env):
             done = self._computeDone()
             info = self._computeInfo()
             # Advance the step counter
-            #self.step_counter = self.step_counter + (1 * self.AGGR_PHY_STEPS)
             if done == True:
                 obs = self._computeObs(done = True)
                 break
@@ -792,7 +756,7 @@ class BaseAviary(gym.Env):
     def render(self, mode='human', close=False):
         """Prints a textual output of the environment.
         Parameters
-        ----------
+        --
         mode : str, optional
             Unused.
         close : bool, optional
@@ -801,7 +765,7 @@ class BaseAviary(gym.Env):
         nth_drone = 0
         gv_pos = np.array(self._get_vehicle_position()[0])
         # Set target point, camera view and projection matrices
-        target = gv_pos + np.array([0.0,0,0])#np.dot(rot_mat, np.array([0, 0, -1000])) + np.array(self.pos[nth_drone, :]
+        target = gv_pos + np.array([0.0,0,0])
         DRONE_CAM_VIEW = p.computeViewMatrix(cameraEyePosition=self.pos[nth_drone, :] + np.array([0, 0, 0.75]) +np.array([0, 0, self.L]),
                                             cameraTargetPosition=target,
                                             cameraUpVector=[1, 0, 0],
@@ -843,20 +807,12 @@ class BaseAviary(gym.Env):
         p.disconnect(physicsClientId=self.CLIENT)
     
     def getPyBulletClient(self):
-        """Returns (int) The PyBullet Client Id."""
-        return self.CLIENT
+        return self.CLIENT  # int, PyBullet Client Id
     
     def getDroneIds(self):
-        """(NUM_DRONES,)-shaped int ndarray containing the drones' ids.
-        """
-        return self.DRONE_IDS
+        return self.DRONE_IDS  # (NUM_DRONES,) int
     
     def _updateAndStoreKinematicInformation(self):
-        """Updates and stores the drones kinemaatic information.
-
-        This method is meant to limit the number of calls to PyBullet in each step
-        and improve performance (at the expense of memory).
-        """
         for i in range (self.NUM_DRONES):
             self.pos[i], self.quat[i] = p.getBasePositionAndOrientation(self.DRONE_IDS[i], physicsClientId=self.CLIENT)
             self.rpy[i] = p.getEulerFromQuaternion(self.quat[i])
@@ -884,21 +840,6 @@ class BaseAviary(gym.Env):
             os.makedirs(os.path.dirname(self.IMG_PATH_GRAPH), exist_ok=True)
     
     def _getDroneStateVector(self, nth_drone):
-        """Returns the state vector of the n-th drone.
-
-        Parameters
-        ----------
-        nth_drone : int
-            The ordinal number/position of the desired drone in list self.DRONE_IDS.
-
-        Returns
-        -------
-        ndarray 
-            (20,)-shaped array of floats containing the state vector of the n-th drone.
-            Check the only line in this method and `_updateAndStoreKinematicInformation()`
-            to understand its format.
-
-        """
         state = np.hstack([self.pos[nth_drone, :], self.quat[nth_drone, :], self.rpy[nth_drone, :],
                            self.vel[nth_drone, :], self.ang_v[nth_drone, :], self.last_clipped_action[nth_drone, :]])
         return state.reshape(20,)
@@ -907,21 +848,20 @@ class BaseAviary(gym.Env):
         """Returns camera captures from the n-th drone POV.
 
         Parameters
-        ----------
+        --
         nth_drone : int
-            The ordinal number/position of the desired drone in list self.DRONE_IDS.
         segmentation : bool, optional
-            Whehter to compute the compute the segmentation mask.
+            Whether to compute the segmentation mask.
             It affects performance.
 
         Returns
-        -------
+        --
         ndarray 
-            (h, w, 4)-shaped array of uint8's containing the RBG(A) image captured from the n-th drone's POV.
+            (h, w, 4) uint8, the RBG(A) image from the n-th drone's POV.
         ndarray
-            (h, w)-shaped array of uint8's containing the depth image captured from the n-th drone's POV.
+            (h, w) uint8, depth image from the drone POV.
         ndarray
-            (h, w)-shaped array of uint8's containing the segmentation image captured from the n-th drone's POV.
+            (h, w) uint8, segmentation image from the drone POV.
 
         """
         if self.IMG_RES is None:
@@ -930,16 +870,15 @@ class BaseAviary(gym.Env):
 
         rot_mat = np.array(p.getMatrixFromQuaternion(self.quat[nth_drone, :])).reshape(3, 3)
 
-        #### Set target point, camera view and projection matrices #
+        # Set target point, camera view and projection matrices
         target = np.dot(rot_mat, np.array([0, 0, -1000])) + np.array(self.pos[nth_drone, :])
 
-        #### Image distortion setting ####
+        # Image distortion setting
         if self.distortion:
             fov = 108
             img_res = self.IMG_RES_org
         else:
             fov = 85.7
-            #fov = 50.76
             img_res = self.IMG_RES
 
 
@@ -965,7 +904,6 @@ class BaseAviary(gym.Env):
         if self.distortion:
             self.distorted_img = np.zeros_like(rgb)
             self.distorted_img[tuple(self.distorted_points.T)] = rgb[tuple(self.image_points.T)]
-            # self.distorted_img = self.distorted_img[8:72,8:72,:]
             rgb = self.distorted_img
         dep = np.reshape(dep, (h, w))
         seg = np.reshape(seg, (h, w))
@@ -981,16 +919,16 @@ class BaseAviary(gym.Env):
         """Returns camera captures from the n-th drone POV.
 
         Parameters
-        ----------
+        --
         img_type : ImageType
             The image type: RGB(A), depth, segmentation, or B&W (from RGB).
         img_input : ndarray
-            (h, w, 4)-shaped array of uint8's for RBG(A) or B&W images.
-            (h, w)-shaped array of uint8's for depth or segmentation images.
+            (h, w, 4) array of uint8's for RBG(A) or B&W images.
+            (h, w) array of uint8's for depth or segmentation images.
         path : str
             Path where to save the output as PNG.
         fram_num: int, optional
-            Frame number to append to the PNG's filename.
+            Frame number to append to the PNG filename.
 
         """
         if img_type == ImageType.RGB:
@@ -1008,34 +946,19 @@ class BaseAviary(gym.Env):
             (Image.fromarray(temp)).save(path+"frame_"+str(frame_num)+".png")
 
     def _getAdjacencyMatrix(self):
-        """Computes the adjacency matrix of a multi-drone system.
-
-        Attribute NEIGHBOURHOOD_RADIUS is used to determine neighboring relationships.
-
-        Returns
-        -------
-        ndarray
-            (NUM_DRONES, NUM_DRONES)-shaped array of 0's and 1's representing the adjacency matrix 
-            of the system: adj_mat[i,j] == 1 if (i, j) are neighbors; == 0 otherwise.
-
-        """
         adjacency_mat = np.identity(self.NUM_DRONES)
         for i in range(self.NUM_DRONES-1):
             for j in range(self.NUM_DRONES-i-1):
                 if np.linalg.norm(self.pos[i, :]-self.pos[j+i+1, :]) < self.NEIGHBOURHOOD_RADIUS:
                     adjacency_mat[i, j+i+1] = adjacency_mat[j+i+1, i] = 1
-        return adjacency_mat
+        return adjacency_mat  # (NUM_DRONES, NUM_DRONES) ndarray; 1 if neighbors, 0 otherwise
     
     def _physics(self, rpm, nth_drone):
         """Base PyBullet physics implementation.
-
         Parameters
-        ----------
-        rpm : ndarray
-            (4)-shaped array of ints containing the RPMs values of the 4 motors.
+        --
+        rpm : ndarray; ints; the RPMs of the 4 motors.
         nth_drone : int
-            The ordinal number/position of the desired drone in list self.DRONE_IDS.
-
         """
         forces = np.array(rpm**2)*self.KF
         torques = np.array(rpm**2)*self.KM
@@ -1058,15 +981,10 @@ class BaseAviary(gym.Env):
     def _groundEffect(self, rpm, nth_drone):
         """PyBullet implementation of a ground effect model.
 
-        Inspired by the analytical model used for comparison in (Shi et al., 2019).
-
         Parameters
-        ----------
+        --
         rpm : ndarray
-            (4)-shaped array of ints containing the RPMs values of the 4 motors.
         nth_drone : int
-            The ordinal number/position of the desired drone in list self.DRONE_IDS.
-
         """
         # Kin. info of all links (propellers and center of mass)
         data = p.getLinkStates(self.DRONE_IDS[nth_drone],
@@ -1089,20 +1007,11 @@ class BaseAviary(gym.Env):
                                      flags=p.LINK_FRAME,
                                      physicsClientId=self.CLIENT
                                      )
-        # Attitude and its z-axis velocity in the world frame #
-    
+
     def _drag(self, rpm, nth_drone):
         """PyBullet implementation of a drag model.
-
-        Based on the the system identification in (Forster, 2015).
-
-        Parameters
-        ----------
-        rpm : ndarray
-            (4)-shaped array of ints containing the RPMs values of the 4 motors.
+        rpm : (4, ) ndarray
         nth_drone : int
-            The ordinal number/position of the desired drone in list self.DRONE_IDS.
-
         """
         # Rotation matrix of the base
         base_rot = np.array(p.getMatrixFromQuaternion(self.quat[nth_drone, :])).reshape(3, 3)
@@ -1118,15 +1027,6 @@ class BaseAviary(gym.Env):
                              )
     
     def _downwash(self, nth_drone):
-        """PyBullet implementation of a ground effect model.
-
-        Based on experiments conducted at the Dynamic Systems Lab by SiQi Zhou.
-
-        Parameters
-        ----------
-        nth_drone : int
-            The ordinal number/position of the desired drone in list self.DRONE_IDS.
-        """
         for i in range(self.NUM_DRONES):
             delta_z = self.pos[i, 2] - self.pos[nth_drone, 2]
             delta_xy = np.linalg.norm(np.array(self.pos[i, 0:2]) - np.array(self.pos[nth_drone, 0:2]))
@@ -1144,14 +1044,11 @@ class BaseAviary(gym.Env):
 
     def _dynamics(self, rpm, nth_drone):
         """Explicit dynamics implementation.
-        Based on code written at the Dynamic Systems Lab by James Xu.
 
         Parameters
-        ----------
+        --
         rpm : ndarray
-            (4)-shaped array of ints containing the RPMs values of the 4 motors.
         nth_drone : int
-            The ordinal number/position of the desired drone in list self.DRONE_IDS.
         """
         # Current state
         pos = self.pos[nth_drone,:]
@@ -1199,16 +1096,14 @@ class BaseAviary(gym.Env):
 
     def _normalizedActionToRPM(self, action):
         """De-normalizes the [-1, 1] range to the [0, MAX_RPM] range.
-
         Parameters
-        ----------
+        --
         action : ndarray
             (4)-shaped array of ints containing an input in the [-1, 1] range.
         Returns
-        -------
+        --
         ndarray
             (4)-shaped array of ints containing RPMs for the 4 motors in the [0, MAX_RPM] range.
-
         """
         if np.any(np.abs(action) > 1):
             print("\n[ERROR] it", self.step_counter, "in BaseAviary._normalizedActionToRPM(), out-of-bound action")
@@ -1222,7 +1117,7 @@ class BaseAviary(gym.Env):
         (for single or multi-agent aviaries, respectively).
 
         Parameters
-        ----------
+        --
         action : ndarray | dict
             (4)-shaped array of ints (or dictionary of arrays) containing the current RPMs input.
 
@@ -1236,14 +1131,6 @@ class BaseAviary(gym.Env):
             self.last_action = np.reshape(res_action, (self.NUM_DRONES, 4))
 
     def _showDroneLocalAxes(self, nth_drone):
-        """Draws the local frame of the n-th drone in PyBullet's GUI.
-
-        Parameters
-        ----------
-        nth_drone : int
-            The ordinal number/position of the desired drone in list self.DRONE_IDS.
-
-        """
         if self.GUI:
             AXIS_LENGTH = 2*self.L
             self.X_AX[nth_drone] = p.addUserDebugLine(lineFromXYZ=[0, 0, 0],
@@ -1272,11 +1159,6 @@ class BaseAviary(gym.Env):
                                                       )
 
     def _addObstacles(self):
-        """Add obstacles to the environment.
-
-        These obstacles are loaded from standard URDF files included in Bullet.
-
-        """
         p.loadURDF("samurai.urdf",
                    physicsClientId=self.CLIENT
                    )
@@ -1298,10 +1180,8 @@ class BaseAviary(gym.Env):
     
     def _parseURDFParameters(self):
         """Loads parameters from an URDF file.
-
         This method is nothing more than a custom XML parser for the .urdf
         files in folder `assets/`.
-
         """
         URDF_TREE = etxml.parse(os.path.dirname(os.path.abspath(__file__))+"/../assets/"+self.URDF).getroot()
         M = float(URDF_TREE[1][0][1].attrib['value'])
@@ -1346,7 +1226,7 @@ class BaseAviary(gym.Env):
         """Pre-processes the action passed to `.step()` into motors' RPMs.
 
         Parameters
-        ----------
+        --
         action : ndarray | dict[..]
             The input action for one or more drones, to be translated into RPMs.
         """

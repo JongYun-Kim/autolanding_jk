@@ -1,7 +1,3 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
-#
-# This source code is licensed under the MIT license found in the
-# LICENSE file in the root directory of this source tree.
 import warnings
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 
@@ -12,16 +8,13 @@ os.environ['MUJOCO_GL'] = 'egl'
 from pathlib import Path
 
 import hydra
-import numpy as np
 import torch
-from gym_pybullet_drones.utils import specs
 
 import dmc
 import utils
 from logger import Logger
 from replay_buffer import ReplayBufferStorage, make_replay_loader
 from video import TrainVideoRecorder, VideoRecorder
-# from decomposed_networks import Actor_Decomposed, Encoder_Decomposed
 
 torch.backends.cudnn.benchmark = True
 
@@ -29,7 +22,6 @@ torch.backends.cudnn.benchmark = True
 def make_agent(obs_spec, action_spec, cfg):
     cfg.obs_shape = obs_spec.shape
     cfg.action_shape = action_spec.shape
-    # cfg.action_shape = [2]      # meraj
     return hydra.utils.instantiate(cfg)
 
 
@@ -58,7 +50,6 @@ class Workspace:
                                   self.cfg.action_repeat, self.cfg.seed)
         self.eval_env = dmc.make(self.cfg.task_name, self.cfg.frame_stack,
                                 self.cfg.action_repeat, self.cfg.seed)
-        #self.eval_env = self.train_env 
         # create replay buffer
         data_specs = (self.train_env.observation_spec(),
                       self.train_env.action_spec(),
@@ -110,7 +101,6 @@ class Workspace:
                                             self.global_step,
                                             time_step.drone_state,
                                             eval_mode=True)
-                  #  action = np.append(action, -0.45).astype(np.float32)    # meraj
                 time_step = self.eval_env.step(action)
                 self.video_recorder.record(self.eval_env)
                 total_reward += time_step.reward

@@ -1,7 +1,3 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
-#
-# This source code is licensed under the MIT license found in the
-# LICENSE file in the root directory of this source tree.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,7 +13,6 @@ class RandomBrigthnessAug(nn.Module):
     def forward(self,x):
         n, c, h, w = x.size()
         factors = torch.FloatTensor(n, c, 1, 1).uniform_(1-self.range, 1+self.range).to(self.device)
-        #factors[:,:] = 2
         x = factors*x
         x = torch.clamp(x,0,255)
         return x
