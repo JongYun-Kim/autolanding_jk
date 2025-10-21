@@ -12,7 +12,8 @@ class RandomBrigthnessAug(nn.Module):
 
     def forward(self,x):
         n, c, h, w = x.size()
-        factors = torch.FloatTensor(n, c, 1, 1).uniform_(1-self.range, 1+self.range).to(self.device)
+        # factors = torch.FloatTensor(n, c, 1, 1).uniform_(1-self.range, 1+self.range).to(self.device)
+        factors = torch.empty((n, c, 1, 1), device=self.device).uniform_(1 - self.range, 1 + self.range)
         x = factors*x
         x = torch.clamp(x,0,255)
         return x
@@ -58,9 +59,7 @@ class Encoder(nn.Module):
 
         assert len(obs_shape) == 3
         
-        # self.repr_dim = 32 * 35 * 35 +(7*3)
         self.repr_dim = 32 * 35 * 35 +(drone_state_dim * num_stacks)
-        #self.repr_dim = 20736#8 * 35 * 35 +(7*3)
         self.convnet = nn.Sequential(nn.Conv2d(obs_shape[0], 32, 3, stride=2),
                                      nn.ReLU(), nn.Conv2d(32, 32, 3, stride=1),
                                      nn.ReLU(), nn.Conv2d(32, 32, 3, stride=1),
@@ -68,7 +67,6 @@ class Encoder(nn.Module):
                                      nn.ReLU())
 
         self.apply(utils.weight_init)
-        #self.load_state_dict(torch.load('/home/user/landing/encoder_higher_weight_1.pt', map_location = torch.device('cpu')))
         self.eval()
 
     def forward(self, obs, drone_states):
@@ -93,7 +91,6 @@ class Actor(nn.Module):
                                     nn.Linear(hidden_dim, action_shape[0]))
 
         self.apply(utils.weight_init)
-        #self.load_state_dict(torch.load('/home/user/landing/actor_higher_weight_1.pt', map_location = torch.device('cpu')))
         self.eval()
 
     def forward(self, obs, std):
