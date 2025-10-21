@@ -193,8 +193,6 @@ class DrQV2Agent:
             if step < self.num_expl_steps:
                 action.uniform_(-1.0, 1.0)
 
-        # action[0, 2] = -0.45    # meraj
-
         return action.cpu().numpy()[0]
 
     def update_critic(self, obs, action, reward, discount, next_obs, step):
@@ -205,7 +203,6 @@ class DrQV2Agent:
             stddev = utils.schedule(self.stddev_schedule, step)
             dist = self.actor(next_obs, stddev)
             next_action = dist.sample(clip=self.stddev_clip)
-            # next_action[0, 2] = -0.45        # meraj
             target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
             target_V = torch.min(target_Q1, target_Q2)
             target_Q = reward + (discount * target_V)
@@ -236,7 +233,6 @@ class DrQV2Agent:
         dist = self.actor(obs, stddev)
         action = dist.sample(clip=self.stddev_clip)
         log_prob = dist.log_prob(action).sum(-1, keepdim=True)
-        # action[0, 2] = -0.45        # meraj
         Q1, Q2 = self.critic(obs, action)
         Q = torch.min(Q1, Q2)
 
@@ -259,7 +255,6 @@ class DrQV2Agent:
 
         if step % self.update_every_steps != 0:
             return metrics
-        #print('getting batches')
         batch = next(replay_iter)
         obs, action, reward, discount, next_obs, drone_state, next_drone_state = utils.to_torch(
             batch, self.device)
