@@ -103,7 +103,7 @@ class LNFFN(nn.Module):
             nn.GELU(),
             nn.Linear(hidden, d_model),
         )
-        self.drop = nn.Dropout(p_drop)
+        self.drop = nn.Dropout(p_drop) if p_drop != 0.0 else nn.Identity()
 
     def forward(self, x):
         # x: [B, N, d]
@@ -119,7 +119,7 @@ class LNMultiheadAttention(nn.Module):
         self.ln_q = nn.LayerNorm(d_model)
         self.ln_kv = nn.LayerNorm(d_model) if cross else None
         self.attn = nn.MultiheadAttention(d_model, nhead, dropout=p_drop, batch_first=True)
-        self.drop = nn.Dropout(p_drop)
+        self.drop = nn.Dropout(p_drop) if p_drop != 0.0 else nn.Identity()
         self.cross = cross
 
     def forward(self, q, k=None, v=None, attn_mask=None, key_padding_mask=None):
@@ -229,7 +229,7 @@ class EncoderA_TimeAware(nn.Module):
         self.temporal_layers = nn.ModuleList([LNMultiheadAttention(d_model, nhead, p_drop, cross=False) for _ in range(self_depth)])
         self.temporal_ffn    = nn.ModuleList([LNFFN(d_model, p_drop=p_drop) for _ in range(self_depth)])
 
-        self.drop = nn.Dropout(p_drop)
+        self.drop = nn.Dropout(p_drop) if p_drop != 0.0 else nn.Identity()
         self.apply(utils.weight_init)
         self.eval()
 
@@ -354,7 +354,7 @@ class EncoderB_TimeAware(nn.Module):
         self.temp_attn  = nn.ModuleList([LNMultiheadAttention(d_model, nhead, p_drop, cross=False) for _ in range(depth_temp)])
         self.temp_ffn   = nn.ModuleList([LNFFN(d_model, p_drop=p_drop) for _ in range(depth_temp)])
 
-        self.drop = nn.Dropout(p_drop)
+        self.drop = nn.Dropout(p_drop) if p_drop != 0.0 else nn.Identity()
         self.apply(utils.weight_init)
         self.eval()
 
