@@ -1,0 +1,7 @@
+enc: A
+enc_cfg:
+  d_model: 256
+  nhead: 4
+  p_drop: 0
+  cross_depth: 1
+  self_depth: 1

@@ -503,7 +503,7 @@ class DrQV2Agent:
                  hidden_dim, critic_target_tau, num_expl_steps,
                  update_every_steps, stddev_schedule, stddev_clip, use_tb,
                  frame_stack=3,
-                 enc: str = 'org',
+                 enc: str = 'not_received',
                  enc_cfg: dict = None,
                  state_dim_per_frame: int = 11):
         self.device = device
@@ -520,6 +520,9 @@ class DrQV2Agent:
 
         # Encoder 선택/생성
         C, H, W = obs_shape
+        if enc == 'not_received':
+            enc = 'org'
+            for _ in range(8): print("[DrQV2Agent] encoder_type not received; defaulting to 'org' (baseline encoder).")
         if enc == 'org':
             self.encoder = EncoderBaseline(obs_shape, num_stacks=frame_stack,
                                            drone_state_dim=state_dim_per_frame).to(device)
@@ -536,7 +539,7 @@ class DrQV2Agent:
             d_model = self.encoder_cfg.get('d_model', 256)
             nhead   = self.encoder_cfg.get('nhead', 4)
             p_drop  = self.encoder_cfg.get('p_drop', 0.05)
-            patch   = self.encoder_cfg.get('patch', 12)       # → Np=49
+            patch   = self.encoder_cfg.get('patch', 12)       # → Np=49; pixel size of each patch
             img_sz  = self.encoder_cfg.get('img_size', H)     # 기본 obs H 사용
             depth_local = self.encoder_cfg.get('depth_local', 2)
             depth_temp  = self.encoder_cfg.get('depth_temp', 1)

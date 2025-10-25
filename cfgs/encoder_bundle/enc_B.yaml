@@ -1,0 +1,8 @@
+enc: B
+enc_cfg:
+  d_model: 256
+  nhead: 4
+  p_drop: 0
+  patch: 12  # pixel size of each image patch
+  depth_local: 2
+  depth_temp: 1
