@@ -393,10 +393,32 @@ class LandingGimbalAviary(LandingAviary):
             print(f"[ERROR] in {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}()")
 
     def _rad_to_norm(self, angles_rad):
-        """angles_rad shape (3,): [pitch(rad), roll(rad), yaw(rad)] -> [-1,1]^3"""
+        """angles_rad shape (3,): [pitch(rad), roll(rad), yaw(rad)] -> [-1,1]^3
+
+        Handles zero-width ranges (locked axes) safely by returning 0.0 for those axes.
+        """
         lo = self.gimbal_angle_ranges[:, 0]
         hi = self.gimbal_angle_ranges[:, 1]
-        return 2.0 * (np.asarray(angles_rad) - lo) / (hi - lo) - 1.0
+        range_width = hi - lo
+
+        # Check which axes are locked (zero range) to avoid division by zero
+        locked_axes = np.abs(range_width) < 1e-9
+
+        # Initialize result array
+        result = np.zeros_like(angles_rad, dtype=np.float32)
+
+        # For unlocked axes, normalize normally
+        if not np.all(locked_axes):
+            result[~locked_axes] = (
+                2.0 * (np.asarray(angles_rad)[~locked_axes] - lo[~locked_axes])
+                / range_width[~locked_axes] - 1.0
+            )
+
+        # For locked axes, return 0.0 (centered, represents locked state)
+        # This is safe since locked axes should not be used in action selection
+        result[locked_axes] = 0.0
+
+        return result
 
     def _norm_to_rad(self, angles_norm):
         """[-1,1]^3 -> radians (3,) in order [pitch, roll, yaw]"""
@@ -576,11 +598,23 @@ class LandingGimbalAviary(LandingAviary):
         # Clip to configured ranges to keep oracle within actuator limits
         lo = self.gimbal_angle_ranges[:, 0].astype(np.float64)
         hi = self.gimbal_angle_ranges[:, 1].astype(np.float64)
+        range_width = hi - lo
+
         # Wrap yaw to (-pi, pi]
         yaw_wrapped = (angles_rad[2] + np.pi) % (2 * np.pi) - np.pi
         angles_rad = np.array([angles_rad[0], angles_rad[1], yaw_wrapped], dtype=np.float64)
-        # Clip
-        angles_rad = np.minimum(np.maximum(angles_rad, lo), hi).astype(np.float32)
+
+        # Only clip axes with non-zero range (unlocked axes)
+        unlocked = np.abs(range_width) >= 1e-9
+        angles_rad_clipped = np.array(angles_rad, copy=True)
+        angles_rad_clipped[unlocked] = np.clip(
+            angles_rad[unlocked],
+            lo[unlocked],
+            hi[unlocked]
+        )
+        # For locked axes, force to center (0.0)
+        angles_rad_clipped[~unlocked] = 0.0
+        angles_rad = angles_rad_clipped.astype(np.float32)
 
         angles_norm = self._rad_to_norm(angles_rad)
 
