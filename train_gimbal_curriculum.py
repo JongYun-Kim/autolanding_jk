@@ -6,6 +6,8 @@ os.environ['MKL_SERVICE_FORCE_INTEL'] = '1'
 os.environ['MUJOCO_GL'] = 'egl'
 
 from pathlib import Path
+import json
+import glob
 import hydra
 import torch
 import dmc
@@ -42,15 +44,39 @@ class Workspace:
         self._global_step = 0
         self._global_episode = 0
 
-        # Curriculum learning state
+        # === Curriculum config/state ===
         self.curr_enabled = getattr(self.cfg, "curriculum_preset", None) is not None and self.cfg.curriculum_preset.curriculum.enable
         self.curr_stage = (self.cfg.curriculum_preset.curriculum.initial_stage if self.curr_enabled else None)
-        self.success_hist = deque(maxlen=(self.cfg.curriculum_preset.curriculum.window if self.curr_enabled else 1))
+
+        if self.curr_enabled:
+            cfgc = self.cfg.curriculum_preset.curriculum
+            # base knobs
+            self._c_window = int(cfgc.window)
+            self._c_min_episodes = int(cfgc.min_episodes)
+            self._c_success_rate = float(cfgc.success_rate)
+            self._c_max_stage = int(cfgc.max_stage)
+            # stability knobs (new, with back-compat defaults)
+            self._c_cooldown_episodes = int(getattr(cfgc, "cooldown_episodes", 0))
+            self._c_min_stage_episodes = int(getattr(cfgc, "min_stage_episodes", self._c_min_episodes))
+            self._c_bootstrap_failures = int(getattr(cfgc, "bootstrap_failures", 0))
+            self._c_require_consec = int(getattr(cfgc, "require_consecutive_windows", 1))
+            assert self._c_min_episodes <= self._c_window, "curriculum.min_episodes must not be greater than curriculum.window"
+            assert self._c_require_consec >= 1
+
+        # runtime stats
+        self.success_hist = deque(maxlen=(self._c_window if self.curr_enabled else 1))
+        self.stage_episode_count = 0
+        self.cooldown_left = 0
+        self.consecutive_passes = 0
+
         if self.curr_enabled:
             print(f"[Curriculum] Enabled. Starting at stage {self.curr_stage}.")
-            # min_episodes must not be greater than window; if so, then the agent can never advance!!
-            assert self.cfg.curriculum_preset.curriculum.min_episodes <= self.cfg.curriculum_preset.curriculum.window, \
-                "curriculum.min_episodes must not be greater than curriculum.window"
+            self._reset_stage_statistics(new_stage=self.curr_stage, bootstrap=(self._c_bootstrap_failures > 0))
+
+        # Best checkpoints metadata file
+        self.best_meta_path = self.work_dir / "best_checkpoints.json"
+        if not self.best_meta_path.exists():
+            self._write_best_meta([])
 
     def setup(self):
         # create logger
@@ -64,8 +90,9 @@ class Workspace:
 
         # 커리큘럼 초기 스테이지를 양쪽 env에 적용
         if getattr(self, "curr_enabled", False):
-            self.train_env.set_curriculum_stage(self.cfg.curriculum_preset.curriculum.initial_stage)
-            self.eval_env.set_curriculum_stage(self.cfg.curriculum_preset.curriculum.initial_stage)
+            init_stage = self.cfg.curriculum_preset.curriculum.initial_stage
+            self.train_env.set_curriculum_stage(init_stage)
+            self.eval_env.set_curriculum_stage(init_stage)
 
         # create replay buffer
         data_specs = (self.train_env.observation_spec(),
@@ -74,18 +101,14 @@ class Workspace:
                       self.train_env.discount_spec(),
                       self.train_env.drone_state_spec())
 
-        self.replay_storage = ReplayBufferStorage(data_specs,
-                                                  self.work_dir / 'buffer')
-
+        self.replay_storage = ReplayBufferStorage(data_specs, self.work_dir / 'buffer')
         self.replay_loader = make_replay_loader(
             self.work_dir / 'buffer', self.cfg.replay_buffer_size,
             self.cfg.batch_size, self.cfg.replay_buffer_num_workers,
             self.cfg.save_snapshot, self.cfg.nstep, self.cfg.discount)
         self._replay_iter = None
-        self.video_recorder = VideoRecorder(
-            self.work_dir if self.cfg.save_video else None)
-        self.train_video_recorder = VideoRecorder(
-            self.work_dir if self.cfg.save_train_video else None)
+        self.video_recorder = VideoRecorder(self.work_dir if self.cfg.save_video else None)
+        self.train_video_recorder = VideoRecorder(self.work_dir if self.cfg.save_train_video else None)
 
     def _build_env_kwargs_from_cfg(self, cfg):
         # 커리큘럼 비사용: 빈 kwargs
@@ -96,21 +119,18 @@ class Workspace:
         stages = []
         for s in preset.curriculum.stages:
             stages.append(CurriculumStageSpec(
-                name = s.name,
-                gimbal_enabled = bool(s.gimbal_enabled),
-                lock_down = bool(s.lock_down),
-                scale = tuple(float(x) for x in s.scale),  # [pitch, roll, yaw] in [0,1]
-                include_viz_reward = bool(s.include_viz_reward),
-                viz_weight = float(s.viz_weight),
-                not_visible_penalty = float(s.not_visible_penalty),
-                smooth_penalty = float(getattr(s, "smooth_penalty", 0.0)),
-                yaw_only = bool(getattr(s, "yaw_only", False)),
-                pitch_only = bool(getattr(s, "pitch_only", False)),
+                name=s.name,
+                gimbal_enabled=bool(s.gimbal_enabled),
+                lock_down=bool(s.lock_down),
+                scale=tuple(float(x) for x in s.scale),
+                include_viz_reward=bool(s.include_viz_reward),
+                viz_weight=float(s.viz_weight),
+                not_visible_penalty=float(s.not_visible_penalty),
+                smooth_penalty=float(getattr(s, "smooth_penalty", 0.0)),
+                yaw_only=bool(getattr(s, "yaw_only", False)),
+                pitch_only=bool(getattr(s, "pitch_only", False)),
             ))
-        return {
-            "use_curriculum": True,
-            "curriculum_cfg": stages,
-        }
+        return {"use_curriculum": True, "curriculum_cfg": stages}
 
     @property
     def global_step(self):
@@ -158,14 +178,103 @@ class Workspace:
             if getattr(self, "curr_enabled", False):
                 log('curriculum_stage', self.curr_stage)
 
+    # Curriculum helpers
+    def _record_episode_result(self, time_step):
+        if not getattr(self, "curr_enabled", False):
+            return
+        ep_success = bool(getattr(time_step, "landing_info", False))
+        self.success_hist.append(1 if ep_success else 0)
+        self.stage_episode_count += 1
+        if self.cooldown_left > 0:
+            self.cooldown_left -= 1
+
+    def _window_success_rate(self):
+        return (sum(self.success_hist) / len(self.success_hist)) if len(self.success_hist) > 0 else 0.0
+
+    def _eligible_to_evaluate(self, seed_until_step):
+        if not getattr(self, "curr_enabled", False):
+            return False
+        if seed_until_step(self.global_step):
+            return False
+        if self.cooldown_left > 0:
+            return False
+        if self.stage_episode_count < self._c_min_stage_episodes:
+            return False
+        if len(self.success_hist) < self._c_min_episodes:
+            return False
+        if self.curr_stage >= self._c_max_stage:
+            return False
+        return True
+
+    def _should_advance_curriculum(self, seed_until_step):
+        if not self._eligible_to_evaluate(seed_until_step):
+            return False
+        sr = self._window_success_rate()
+        if sr >= self._c_success_rate:
+            self.consecutive_passes += 1
+        else:
+            self.consecutive_passes = 0
+        return self.consecutive_passes >= self._c_require_consec
+
+    def _reset_stage_statistics(self, new_stage, bootstrap=False):
+        self.curr_stage = int(new_stage)
+        self.success_hist = deque(maxlen=self._c_window)
+        self.stage_episode_count = 0
+        self.consecutive_passes = 0
+        self.cooldown_left = int(self._c_cooldown_episodes)
+        if bootstrap:
+            for _ in range(self._c_bootstrap_failures):
+                self.success_hist.append(0)
+
+    # ---- state (de)serialization helpers ----
+    def _build_curriculum_state(self):
+        if not getattr(self, "curr_enabled", False):
+            return None
+        return {
+            "enabled": True,
+            "stage": int(self.curr_stage),
+            "success_hist": list(self.success_hist),
+            "stage_episode_count": int(self.stage_episode_count),
+            "cooldown_left": int(self.cooldown_left),
+            "consecutive_passes": int(self.consecutive_passes),
+            "window": int(self._c_window),
+            "min_episodes": int(self._c_min_episodes),
+            "success_rate": float(self._c_success_rate),
+            "max_stage": int(self._c_max_stage),
+            "cooldown_episodes": int(self._c_cooldown_episodes),
+            "min_stage_episodes": int(self._c_min_stage_episodes),
+            "bootstrap_failures": int(self._c_bootstrap_failures),
+            "require_consecutive_windows": int(self._c_require_consec),
+        }
+
+    def _apply_curriculum_state(self, st):
+        # knobs
+        self._c_window = int(st.get("window", self._c_window))
+        self._c_min_episodes = int(st.get("min_episodes", self._c_min_episodes))
+        self._c_success_rate = float(st.get("success_rate", self._c_success_rate))
+        self._c_max_stage = int(st.get("max_stage", self._c_max_stage))
+        self._c_cooldown_episodes = int(st.get("cooldown_episodes", self._c_cooldown_episodes))
+        self._c_min_stage_episodes = int(st.get("min_stage_episodes", self._c_min_stage_episodes))
+        self._c_bootstrap_failures = int(st.get("bootstrap_failures", self._c_bootstrap_failures))
+        self._c_require_consec = int(st.get("require_consecutive_windows", self._c_require_consec))
+        # runtime
+        self.curr_stage = int(st.get("stage", self.curr_stage or 0))
+        hist_list = st.get("success_hist", [])
+        self.success_hist = deque(hist_list, maxlen=self._c_window)
+        self.stage_episode_count = int(st.get("stage_episode_count", 0))
+        self.cooldown_left = int(st.get("cooldown_left", 0))
+        self.consecutive_passes = int(st.get("consecutive_passes", 0))
+        # reapply to envs
+        try:
+            self.train_env.set_curriculum_stage(self.curr_stage)
+            self.eval_env.set_curriculum_stage(self.curr_stage)
+        except Exception:
+            pass
+
     def train(self):
-        # predicates
-        train_until_step = utils.Until(self.cfg.num_train_frames,
-                                       self.cfg.action_repeat)
-        seed_until_step = utils.Until(self.cfg.num_seed_frames,
-                                      self.cfg.action_repeat)
-        eval_every_step = utils.Every(self.cfg.eval_every_frames,
-                                      self.cfg.action_repeat)
+        train_until_step = utils.Until(self.cfg.num_train_frames, self.cfg.action_repeat)
+        seed_until_step = utils.Until(self.cfg.num_seed_frames, self.cfg.action_repeat)
+        eval_every_step = utils.Every(self.cfg.eval_every_frames, self.cfg.action_repeat)
 
         episode_step, episode_reward = 0, 0
         time_step = self.train_env.reset()
@@ -174,28 +283,26 @@ class Workspace:
         metrics = None
         action = None
 
+        # training loop
         while train_until_step(self.global_step):
 
+            # (-1) at the end of episode:
             if time_step.last():
                 if self._global_episode == 5:
                     self.train_video_recorder.save(f'{self.global_frame}.mp4')
                 self._global_episode += 1
 
-                # 커리큘럼: 에피소드 성공/실패 집계 및 스테이지 전환
+                # curriculum bookkeeping
                 if getattr(self, "curr_enabled", False):
-                    ep_success = bool(time_step.landing_info)  # 마지막 타임스텝에 설정됨
-                    self.success_hist.append(1 if ep_success else 0)
-                    # seed 단계 지난 이후에만 승급 평가
-                    if (not seed_until_step(self.global_step)) and self._should_advance_curriculum():
+                    self._record_episode_result(time_step)
+                    if self._should_advance_curriculum(seed_until_step):
                         self._advance_curriculum_stage()
 
-                # wait until all the metrics schema is populated
+                # logging
                 if metrics is not None:
-                    # log stats
                     elapsed_time, total_time = self.timer.reset()
                     episode_frame = episode_step * self.cfg.action_repeat
-                    with self.logger.log_and_dump_ctx(self.global_frame,
-                                                      ty='train') as log:
+                    with self.logger.log_and_dump_ctx(self.global_frame, ty='train') as log:
                         log('fps', episode_frame / elapsed_time)
                         log('total_time', total_time)
                         log('episode_reward', episode_reward)
@@ -206,36 +313,45 @@ class Workspace:
                         if getattr(self, "curr_enabled", False):
                             log('curriculum_stage', self.curr_stage)
                             if len(self.success_hist) > 0:
-                                log('success_rate_window', sum(self.success_hist) / len(self.success_hist))
+                                sr = self._window_success_rate()
+                                log('success_rate_window', sr)
+                                log('stage_episode_count', self.stage_episode_count)
+                                log('cooldown_left', self.cooldown_left)
+                                log('consecutive_passes', self.consecutive_passes)
 
-                # Reset env
+                # snapshotting
+                if self.cfg.save_snapshot:
+                    self.save_snapshot()
+                    if getattr(self, "curr_enabled", False):
+                        # Top-8 best checkpoints when SR >= 0.8
+                        sr = self._window_success_rate()
+                        self._save_best_checkpoint_if_needed(sr_threshold=0.8, sr=sr)
+
+                # reset env/episode
                 time_step = self.train_env.reset()
                 self.replay_storage.add(time_step)
                 self.train_video_recorder.init(self.train_env)
-                # try to save snapshot
-                if self.cfg.save_snapshot:
-                    self.save_snapshot()
                 episode_step = 0
                 episode_reward = 0
 
-            # Eval
+            # (0) periodic eval
             if eval_every_step(self.global_step):
                 self.logger.log('eval_total_time', self.timer.total_time(), self.global_frame)
                 self.eval()
 
-            # Sample action
+            # (1) act
             with torch.no_grad(), utils.eval_mode(self.agent):
                 action = self.agent.act(time_step.observation,
                                         self.global_step,
                                         time_step.drone_state,
                                         eval_mode=False)
 
-            # Update the agent
+            # (2) learn
             if not seed_until_step(self.global_step):
                 metrics = self.agent.update(self.replay_iter, self.global_step)
                 self.logger.log_metrics(metrics, self.global_frame, ty='train')
 
-            # take env step
+            # (3) env step
             time_step = self.train_env.step(action)
             episode_reward += time_step.reward
             self.replay_storage.add(time_step)
@@ -244,47 +360,34 @@ class Workspace:
             episode_step += 1
             self._global_step += 1
 
-        # Finalize: eval and save snapshot
+        # finalize training
         self.logger.log('eval_total_time', self.timer.total_time(), self.global_frame)
         self.eval()
-        # 스냅샷 저장 (커리큘럼 상태 포함)
         if getattr(self, "curr_enabled", False):
             self.save_stage_checkpoint(tag="final")
 
+    # Snapshot I/O
+    def _base_payload(self):
+        return {
+            'agent': self.agent,
+            'timer': self.timer,
+            '_global_step': self._global_step,
+            '_global_episode': self._global_episode,
+        }
+
     def save_snapshot(self):
+        """Lightweight rolling checkpoint."""
         snapshot = self.work_dir / 'snapshot.pt'
-        keys_to_save = ['agent', 'timer', '_global_step', '_global_episode']
-        # 커리큘럼 상태 포함
+        payload = self._base_payload()
         if getattr(self, "curr_enabled", False):
-            self.curriculum_state = {
-                "enabled": True,
-                "stage": self.curr_stage,
-                "success_hist": list(self.success_hist),
-            }
-            keys_to_save.append("curriculum_state")
-
-        payload = {k: self.__dict__[k] for k in keys_to_save}
-
-        # 커리큘럼 상태 포함
-        if getattr(self, "curr_enabled", False):
-            payload["curriculum_state"] = {
-                "enabled": True,
-                "stage": self.curr_stage,
-                "success_hist": list(self.success_hist),
-            }
-
+            payload['curriculum_state'] = self._build_curriculum_state()
         with snapshot.open('wb') as f:
             torch.save(payload, f)
 
     def save_stage_checkpoint(self, tag: str = ""):
-        """
-        커리큘럼 스테이지 종료 시 저장하는 전용 체크포인트.
-        파일명 예: snapshot_stage2_S3_mid_120000.pt
-        """
-
+        """Checkpoint at stage boundaries."""
         if not getattr(self, "curr_enabled", False):
             return
-        # 스테이지 이름 얻기 (eval_env/train_env 어느 쪽이든 동일 스테이지를 유지)
         try:
             info = self.train_env.get_curriculum_info()
             stage_idx = info["stage_idx"]
@@ -298,70 +401,137 @@ class Workspace:
             fname += f"_{tag}"
         fname += ".pt"
         path = self.work_dir / fname
-        keys_to_save = ['agent', 'timer', '_global_step', '_global_episode']
-        payload = {k: self.__dict__[k] for k in keys_to_save}
-        payload["curriculum_state"] = {
-            "enabled": True,
-            "stage": self.curr_stage,
-            "success_hist": list(self.success_hist),
-            "stage_name": stage_name,
-        }
+
+        payload = self._base_payload()
+        payload["curriculum_state"] = self._build_curriculum_state()
         with path.open('wb') as f:
             torch.save(payload, f)
         print(f"[Curriculum] Saved stage checkpoint: {path}")
 
-    def load_snapshot(self, checkpoint_dir=None):
-        if checkpoint_dir is None:
-            snapshot = self.work_dir / 'snapshot.pt'
+    def load_snapshot(self, checkpoint_path=None):
+        if checkpoint_path is None:
+            checkpoint_path = self.work_dir / 'snapshot.pt'
         else:
-            snapshot = Path(checkpoint_dir)
-        with snapshot.open('rb') as f:
+            checkpoint_path = Path(checkpoint_path)
+        with checkpoint_path.open('rb') as f:
             payload = torch.load(f)
-        for k, v in payload.items():
-            self.__dict__[k] = v
-
-        # 로드 후 스테이지 재적용
-        if getattr(self, "curriculum_state", None):
+        # restore base
+        self.agent = payload['agent']
+        self.timer = payload['timer']
+        self._global_step = payload.get('_global_step', 0)
+        self._global_episode = payload.get('_global_episode', 0)
+        # restore curriculum
+        st = payload.get("curriculum_state", None)
+        if st:
             self.curr_enabled = True
-            self.curr_stage = self.curriculum_state.get("stage", 0)
-            # env가 아직 없을 수 있으니 setup 이후에도 한 번 더 호출됨에 유의
+            self._apply_curriculum_state(st)
+
+    # Best-8 logic
+    def _read_best_meta(self):
+        try:
+            with self.best_meta_path.open('r') as f:
+                return json.load(f)
+        except Exception:
+            return []
+
+    def _write_best_meta(self, items):
+        with self.best_meta_path.open('w') as f:
+            json.dump(items, f, indent=2)
+
+    def _save_best_checkpoint_if_needed(self, sr_threshold, sr):
+        if sr < sr_threshold:
+            return
+        # create checkpoint path
+        sr_pct = int(round(sr * 100))
+        fname = f"snapshot_best_sr{sr_pct}_stage{self.curr_stage}_{self.global_frame}.pt"
+        path = self.work_dir / fname
+
+        payload = self._base_payload()
+        if getattr(self, "curr_enabled", False):
+            payload["curriculum_state"] = self._build_curriculum_state()
+        with path.open('wb') as f:
+            torch.save(payload, f)
+
+        # update leaderboard (keep top-8 by (sr desc, frame desc))
+        items = self._read_best_meta()
+        items.append({"sr": sr, "frame": int(self.global_frame), "path": str(path)})
+        # sort: sr desc, frame desc
+        items.sort(key=lambda x: (x["sr"], x["frame"]), reverse=True)
+        # keep only 8; delete extras on disk
+        extras = items[8:]
+        items = items[:8]
+        for ex in extras:
             try:
-                self.train_env.set_curriculum_stage(self.curr_stage)
-                self.eval_env.set_curriculum_stage(self.curr_stage)
+                Path(ex["path"]).unlink(missing_ok=True)
             except Exception:
                 pass
+        self._write_best_meta(items)
+        print(f"[Checkpoint] Saved BEST (sr={sr:.3f}) -> {path.name}. Kept top-8.")
 
-    # 커리큘럼 판단/승급 로직
-    def _should_advance_curriculum(self):
-        cfgc = self.cfg.curriculum_preset.curriculum
-        if self.curr_stage >= cfgc.max_stage:
-            return False
-        if len(self.success_hist) < cfgc.min_episodes:
-            return False
-        sr = sum(self.success_hist) / len(self.success_hist)
-        return sr >= cfgc.success_rate
+    # Auto resume helpers
+    def auto_resume_if_possible(self):
+        """
+        Try checkpoints in order:
+        1) snapshot.pt
+        2) best_checkpoints.json -> pick the newest (by frame)
+        3) latest snapshot_stage*.pt by frame number
+        """
+        snap = self.work_dir / 'snapshot.pt'
+        if snap.exists():
+            print(f"[Resume] Found snapshot.pt -> {snap}")
+            self.load_snapshot(snap)
+            return True
+
+        # try best
+        items = self._read_best_meta()
+        if items:
+            # pick newest by frame
+            items_sorted = sorted(items, key=lambda x: x["frame"], reverse=True)
+            for cand in items_sorted:
+                p = Path(cand["path"])
+                if p.exists():
+                    print(f"[Resume] Found BEST checkpoint -> {p}")
+                    self.load_snapshot(p)
+                    return True
+
+        # try stage snapshots (pick largest frame in filename)
+        candidates = list(self.work_dir.glob("snapshot_stage*_*_*.pt"))
+        def _frame_from_name(pth: Path):
+            try:
+                # pattern ..._<frame>.pt (frame is last token before .pt)
+                return int(pth.stem.split("_")[-1])
+            except Exception:
+                return -1
+        candidates.sort(key=_frame_from_name, reverse=True)
+        for p in candidates:
+            if p.exists():
+                print(f"[Resume] Found stage checkpoint -> {p}")
+                self.load_snapshot(p)
+                return True
+
+        print("[Resume] No checkpoint found. Starting fresh.")
+        return False
 
     def _advance_curriculum_stage(self):
-        # 1) 현재 스테이지를 "마감"하며 스냅샷 저장
         self.save_stage_checkpoint(tag="end_of_stage")
-        # 2) 다음 스테이지로 승급
-        self.curr_stage += 1
-        self.train_env.set_curriculum_stage(self.curr_stage)
-        self.eval_env.set_curriculum_stage(self.curr_stage)
-        print(f"[Curriculum] advanced to stage {self.curr_stage}")
+        next_stage = self.curr_stage + 1
+        self.train_env.set_curriculum_stage(next_stage)
+        self.eval_env.set_curriculum_stage(next_stage)
+        print(f"[Curriculum] advanced to stage {next_stage}")
+        self._reset_stage_statistics(new_stage=next_stage, bootstrap=(self._c_bootstrap_failures > 0))
 
 
 @hydra.main(config_path='cfgs', config_name='config_gimbal_curriculum')
 def main(cfg):
-    root_dir = Path.cwd()
     workspace = Workspace(cfg)
+
+    # Explicit user-provided checkpoint takes precedence
     if getattr(cfg, "checkpoint_dir", None):
         workspace.load_snapshot(cfg.checkpoint_dir)
     else:
-        snapshot = root_dir / 'snapshot.pt'
-        if snapshot.exists():
-            print(f'resuming: {snapshot}')
-            workspace.load_snapshot()
+        # try snapshot.pt, best, or stage snapshots
+        workspace.auto_resume_if_possible()
+
     workspace.train()
 
 
