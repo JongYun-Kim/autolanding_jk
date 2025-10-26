@@ -2,5 +2,5 @@ defaults:
   - _self_
 
 task_name: gimbal-curriculum-landing-aviary-v0
-num_train_frames: 7000000
-stddev_schedule: 'linear(0.6, 0.01, 6000000)'
+num_train_frames: 6000000
+stddev_schedule: 'linear(0.42, 0.01, 5000000)'

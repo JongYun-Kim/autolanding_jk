@@ -1,8 +1,8 @@
 curriculum:
   enable: true
   initial_stage: 0
-  window: 50
-  min_episodes: 49
+  window: 100
+  min_episodes: 80
   success_rate: 0.85
   max_stage: 4
   stages:

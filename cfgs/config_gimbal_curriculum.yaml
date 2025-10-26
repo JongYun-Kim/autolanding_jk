@@ -47,7 +47,7 @@ agent:
   hidden_dim: 512
   feature_dim: ${feature_dim}
   stddev_schedule: ${stddev_schedule}
-  stddev_clip: 0.42
+  stddev_clip: 0.32
   frame_stack: ${frame_stack}
 
 hydra:
