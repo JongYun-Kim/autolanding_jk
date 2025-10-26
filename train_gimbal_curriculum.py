@@ -59,7 +59,7 @@ class Workspace:
             self._c_cooldown_episodes = int(getattr(cfgc, "cooldown_episodes", 0))
             self._c_min_stage_episodes = int(getattr(cfgc, "min_stage_episodes", self._c_min_episodes))
             self._c_bootstrap_failures = int(getattr(cfgc, "bootstrap_failures", 0))
-            self._c_require_consec = int(getattr(cfgc, "require_consecutive_windows", 1))
+            self._c_require_consec = int(getattr(cfgc, "require_consecutive_windows", 4))
             assert self._c_min_episodes <= self._c_window, "curriculum.min_episodes must not be greater than curriculum.window"
             assert self._c_require_consec >= 1
 
@@ -182,11 +182,20 @@ class Workspace:
     def _record_episode_result(self, time_step):
         if not getattr(self, "curr_enabled", False):
             return
+        # 성공/실패 기록
         ep_success = bool(getattr(time_step, "landing_info", False))
         self.success_hist.append(1 if ep_success else 0)
         self.stage_episode_count += 1
+        # Cooldown 감소
         if self.cooldown_left > 0:
             self.cooldown_left -= 1
+        # consecutive_passes 업데이트
+        if len(self.success_hist) >= self._c_min_episodes:
+            sr = self._window_success_rate()
+            if sr >= self._c_success_rate:
+                self.consecutive_passes += 1
+            else:
+                self.consecutive_passes = 0
 
     def _window_success_rate(self):
         return (sum(self.success_hist) / len(self.success_hist)) if len(self.success_hist) > 0 else 0.0
@@ -209,11 +218,6 @@ class Workspace:
     def _should_advance_curriculum(self, seed_until_step):
         if not self._eligible_to_evaluate(seed_until_step):
             return False
-        sr = self._window_success_rate()
-        if sr >= self._c_success_rate:
-            self.consecutive_passes += 1
-        else:
-            self.consecutive_passes = 0
         return self.consecutive_passes >= self._c_require_consec
 
     def _reset_stage_statistics(self, new_stage, bootstrap=False):
@@ -468,7 +472,7 @@ class Workspace:
         self._write_best_meta(items)
         print(f"[Checkpoint] Saved BEST (sr={sr:.3f}) -> {path.name}. Kept top-8.")
 
-    # Auto resume helpers
+    # Auto resume: does not always resume the best checkpoint
     def auto_resume_if_possible(self):
         """
         Try checkpoints in order:
