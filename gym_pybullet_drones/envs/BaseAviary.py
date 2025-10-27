@@ -399,6 +399,12 @@ class BaseAviary(gym.Env):
         # GV starting yaw angle
         yaw = random.uniform(-np.pi, np.pi)
         self.gv_heading = yaw
+
+        # Sinusoidal path parameters
+        self.gv_initial_pos = self.gv_pos.copy()  # Store initial position for sinusoidal path calculation
+        self.gv_initial_heading = yaw  # Store initial heading
+        self.gv_sinusoidal_amplitude = 2.0  # Amplitude of sinusoidal oscillation (meters)
+        self.gv_sinusoidal_frequency = 0.5  # Frequency of sinusoidal oscillation (Hz)
         
         plane_color = [1.0, 1.0, 1.0, 1.0]
 
@@ -720,17 +726,51 @@ class BaseAviary(gym.Env):
                 # PyBullet computes the new state, unless Physics.DYN
                 if self.PHYSICS != Physics.DYN:
                     p.stepSimulation(physicsClientId=self.CLIENT)
-                # Manual straight-line update of the ground vehicle
+                # Manual sinusoidal path update of the ground vehicle
                 if hasattr(self, "vehicleId"):
                     gv_pos, gv_ori = p.getBasePositionAndOrientation(self.vehicleId, physicsClientId=self.CLIENT)
-                    # extract yaw from quaternion
-                    _, _, yaw = p.getEulerFromQuaternion(gv_ori)
-                    # compute displacement in body-axis
-                    dx = self.gv_straight_speed * self.TIMESTEP * np.cos(yaw)
-                    dy = self.gv_straight_speed * self.TIMESTEP * np.sin(yaw)
-                    new_gv_pos = [gv_pos[0] + dx, gv_pos[1] + dy, gv_pos[2]]
-                    # reset the base pose so it “drives” straight
-                    p.resetBasePositionAndOrientation(self.vehicleId, new_gv_pos, gv_ori, physicsClientId=self.CLIENT)
+
+                    # Calculate current time for sinusoidal motion
+                    current_time = self.step_counter * self.TIMESTEP
+
+                    # Calculate total forward distance traveled along initial heading
+                    forward_distance = self.gv_straight_speed * current_time
+
+                    # Calculate lateral offset (perpendicular to initial heading) using sinusoidal function
+                    lateral_offset = self.gv_sinusoidal_amplitude * np.sin(2 * np.pi * self.gv_sinusoidal_frequency * current_time)
+
+                    # Compute new position based on sinusoidal path
+                    # Forward direction: along initial heading
+                    dx_forward = forward_distance * np.cos(self.gv_initial_heading)
+                    dy_forward = forward_distance * np.sin(self.gv_initial_heading)
+
+                    # Lateral direction: perpendicular to initial heading (90 degrees counter-clockwise)
+                    dx_lateral = lateral_offset * (-np.sin(self.gv_initial_heading))
+                    dy_lateral = lateral_offset * np.cos(self.gv_initial_heading)
+
+                    # Combine forward and lateral components
+                    new_gv_pos = [
+                        self.gv_initial_pos[0] + dx_forward + dx_lateral,
+                        self.gv_initial_pos[1] + dy_forward + dy_lateral,
+                        self.gv_initial_pos[2]
+                    ]
+
+                    # Update orientation to point in the tangent direction of the sinusoidal path
+                    # Tangent direction derivative: d/dt[forward + lateral*sin(2πft)]
+                    # = forward_direction + lateral_amplitude * 2πf * cos(2πft) * perpendicular_direction
+                    tangent_dx = self.gv_straight_speed * np.cos(self.gv_initial_heading) + \
+                                 self.gv_sinusoidal_amplitude * 2 * np.pi * self.gv_sinusoidal_frequency * \
+                                 np.cos(2 * np.pi * self.gv_sinusoidal_frequency * current_time) * (-np.sin(self.gv_initial_heading))
+                    tangent_dy = self.gv_straight_speed * np.sin(self.gv_initial_heading) + \
+                                 self.gv_sinusoidal_amplitude * 2 * np.pi * self.gv_sinusoidal_frequency * \
+                                 np.cos(2 * np.pi * self.gv_sinusoidal_frequency * current_time) * np.cos(self.gv_initial_heading)
+
+                    # Calculate yaw from tangent direction
+                    new_yaw = np.arctan2(tangent_dy, tangent_dx)
+                    new_gv_ori = [0, 0, np.sin(new_yaw/2), np.cos(new_yaw/2)]
+
+                    # Reset the base pose to follow sinusoidal path
+                    p.resetBasePositionAndOrientation(self.vehicleId, new_gv_pos, new_gv_ori, physicsClientId=self.CLIENT)
                 # Save the last applied action (e.g. to compute drag)
                 self.last_clipped_action = clipped_action
                 obs = self._computeObs()
