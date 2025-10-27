@@ -1,0 +1,4 @@
+# Autoregressive actor: Drone → Gimbal (move-then-point strategy)
+actor_type: autoregressive_drone_first
+actor_cfg: null
+critic_type: factored  # Factored critic works well with autoregressive actors

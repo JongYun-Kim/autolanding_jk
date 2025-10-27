@@ -430,6 +430,7 @@ class EncoderB_TimeAware(nn.Module):
 
 
 class Actor(nn.Module):
+    """Original joint action actor"""
     def __init__(self, repr_dim, action_shape, feature_dim, hidden_dim):
         super().__init__()
         self.trunk = nn.Sequential(
@@ -449,6 +450,7 @@ class Actor(nn.Module):
         """
         obs: [B, repr_dim]
         std: scalar or tensor
+        Returns: dist (TruncatedNormal)
         """
         h = self.trunk(obs)                # [B, feature_dim]
         mu = self.policy(h)                # [B, action_dim]
@@ -459,6 +461,7 @@ class Actor(nn.Module):
 
 
 class Critic(nn.Module):
+    """Original joint critic"""
     def __init__(self, repr_dim, action_shape, feature_dim, hidden_dim):
         super().__init__()
         self.trunk = nn.Sequential(
@@ -491,13 +494,304 @@ class Critic(nn.Module):
         return q1, q2
 
 
+# ============================================================================
+# New Actor Architectures (from ANALYSIS_ACTOR_CRITIC_AND_FIXES.md)
+# ============================================================================
+
+class AutoregressiveActorGimbalFirst(nn.Module):
+    """
+    Autoregressive actor: Gimbal → Drone
+    Motivation: "Point-then-move" strategy
+    - First decide where to point the camera
+    - Then decide drone movement given camera orientation
+    """
+    def __init__(self, repr_dim, action_shape, feature_dim, hidden_dim):
+        super().__init__()
+        assert action_shape[0] == 5, f"Expected action_shape[0]=5, got {action_shape[0]}"
+
+        # Shared trunk
+        self.trunk = nn.Sequential(
+            nn.Linear(repr_dim, feature_dim),
+            nn.BatchNorm1d(feature_dim),
+            nn.Tanh()
+        )
+
+        # Gimbal policy (unconditional)
+        self.gimbal_policy = nn.Sequential(
+            nn.Linear(feature_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, 2)  # [pitch, yaw]
+        )
+
+        # Drone policy (conditioned on gimbal)
+        self.drone_policy = nn.Sequential(
+            nn.Linear(feature_dim + 2, hidden_dim),  # +2 for gimbal actions
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, 3)  # [vx, vy, vz]
+        )
+
+        self.apply(utils.weight_init)
+        self.eval()
+
+    def forward(self, obs, std):
+        """
+        obs: [B, repr_dim]
+        std: scalar or tensor
+        Returns: dist (TruncatedNormal over joint action)
+        """
+        h = self.trunk(obs)  # [B, feature_dim]
+
+        # Step 1: Gimbal action mean
+        gimbal_mu = self.gimbal_policy(h)  # [B, 2]
+        gimbal_mu = torch.tanh(gimbal_mu)
+
+        # Step 2: Drone action mean (conditioned on gimbal)
+        h_drone = torch.cat([h, gimbal_mu], dim=-1)  # [B, feature_dim + 2]
+        drone_mu = self.drone_policy(h_drone)  # [B, 3]
+        drone_mu = torch.tanh(drone_mu)
+
+        # Joint action mean
+        mu = torch.cat([drone_mu, gimbal_mu], dim=-1)  # [B, 5]
+        std = torch.ones_like(mu) * std
+        dist = utils.TruncatedNormal(mu, std)
+        return dist
+
+
+class AutoregressiveActorDroneFirst(nn.Module):
+    """
+    Autoregressive actor: Drone → Gimbal
+    Motivation: "Move-then-point" strategy
+    - First decide where the drone should go
+    - Then adjust gimbal to keep target in view
+    """
+    def __init__(self, repr_dim, action_shape, feature_dim, hidden_dim):
+        super().__init__()
+        assert action_shape[0] == 5, f"Expected action_shape[0]=5, got {action_shape[0]}"
+
+        self.trunk = nn.Sequential(
+            nn.Linear(repr_dim, feature_dim),
+            nn.BatchNorm1d(feature_dim),
+            nn.Tanh()
+        )
+
+        # Drone policy (unconditional)
+        self.drone_policy = nn.Sequential(
+            nn.Linear(feature_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, 3)  # [vx, vy, vz]
+        )
+
+        # Gimbal policy (conditioned on drone)
+        self.gimbal_policy = nn.Sequential(
+            nn.Linear(feature_dim + 3, hidden_dim),  # +3 for drone actions
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, 2)  # [pitch, yaw]
+        )
+
+        self.apply(utils.weight_init)
+        self.eval()
+
+    def forward(self, obs, std):
+        """
+        obs: [B, repr_dim]
+        std: scalar or tensor
+        Returns: dist (TruncatedNormal over joint action)
+        """
+        h = self.trunk(obs)
+
+        # Step 1: Drone action mean
+        drone_mu = self.drone_policy(h)  # [B, 3]
+        drone_mu = torch.tanh(drone_mu)
+
+        # Step 2: Gimbal action mean (conditioned on drone)
+        h_gimbal = torch.cat([h, drone_mu], dim=-1)  # [B, feature_dim + 3]
+        gimbal_mu = self.gimbal_policy(h_gimbal)  # [B, 2]
+        gimbal_mu = torch.tanh(gimbal_mu)
+
+        # Joint action mean
+        mu = torch.cat([drone_mu, gimbal_mu], dim=-1)  # [B, 5]
+        std = torch.ones_like(mu) * std
+        dist = utils.TruncatedNormal(mu, std)
+        return dist
+
+
+class MultiHeadAttentionActor(nn.Module):
+    """
+    Multi-head attention actor: Parallel but contextually-aware actions
+    Motivation: Both drone and gimbal policies see each other's intent
+    - Cross-attention allows coordination without sequential dependency
+    - Most flexible for learning coordination strategy
+    """
+    def __init__(self, repr_dim, action_shape, feature_dim, hidden_dim, nhead=4):
+        super().__init__()
+        assert action_shape[0] == 5, f"Expected action_shape[0]=5, got {action_shape[0]}"
+
+        self.feature_dim = feature_dim
+        self.trunk = nn.Sequential(
+            nn.Linear(repr_dim, feature_dim),
+            nn.BatchNorm1d(feature_dim),
+            nn.Tanh()
+        )
+
+        # Learnable query embeddings for drone and gimbal
+        self.drone_query = nn.Parameter(torch.randn(1, 1, feature_dim))
+        self.gimbal_query = nn.Parameter(torch.randn(1, 1, feature_dim))
+
+        # Cross-attention between observation and queries
+        self.cross_attn = nn.MultiheadAttention(
+            feature_dim, nhead, batch_first=True
+        )
+
+        # Self-attention for coordination between drone and gimbal
+        self.self_attn = nn.MultiheadAttention(
+            feature_dim, nhead, batch_first=True
+        )
+
+        # Layer norms
+        self.ln1 = nn.LayerNorm(feature_dim)
+        self.ln2 = nn.LayerNorm(feature_dim)
+
+        # Separate policy heads
+        self.drone_policy = nn.Sequential(
+            nn.Linear(feature_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, 3)  # [vx, vy, vz]
+        )
+
+        self.gimbal_policy = nn.Sequential(
+            nn.Linear(feature_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, 2)  # [pitch, yaw]
+        )
+
+        self.apply(utils.weight_init)
+        self.eval()
+
+    def forward(self, obs, std):
+        """
+        obs: [B, repr_dim]
+        std: scalar or tensor
+        Returns: dist (TruncatedNormal over joint action)
+        """
+        B = obs.shape[0]
+        h = self.trunk(obs)  # [B, feature_dim]
+
+        # Expand queries for batch
+        drone_q = self.drone_query.expand(B, -1, -1)   # [B, 1, feature_dim]
+        gimbal_q = self.gimbal_query.expand(B, -1, -1) # [B, 1, feature_dim]
+
+        # Stack queries
+        queries = torch.cat([drone_q, gimbal_q], dim=1)  # [B, 2, feature_dim]
+
+        # Use observation as key/value
+        h_kv = h.unsqueeze(1)  # [B, 1, feature_dim]
+
+        # Cross-attention: queries attend to observation
+        attn_out, _ = self.cross_attn(queries, h_kv, h_kv)  # [B, 2, feature_dim]
+        queries = self.ln1(queries + attn_out)  # Residual connection
+
+        # Self-attention: drone and gimbal queries attend to each other
+        attn_out2, _ = self.self_attn(queries, queries, queries)  # [B, 2, feature_dim]
+        h_coordinated = self.ln2(queries + attn_out2)  # [B, 2, feature_dim]
+
+        # Extract drone and gimbal features
+        h_drone = h_coordinated[:, 0, :]   # [B, feature_dim]
+        h_gimbal = h_coordinated[:, 1, :]  # [B, feature_dim]
+
+        # Generate actions
+        drone_mu = torch.tanh(self.drone_policy(h_drone))    # [B, 3]
+        gimbal_mu = torch.tanh(self.gimbal_policy(h_gimbal)) # [B, 2]
+
+        # Joint action mean
+        mu = torch.cat([drone_mu, gimbal_mu], dim=-1)  # [B, 5]
+        std = torch.ones_like(mu) * std
+        dist = utils.TruncatedNormal(mu, std)
+        return dist
+
+
+# ============================================================================
+# New Critic Architecture
+# ============================================================================
+
+class FactoredCritic(nn.Module):
+    """
+    Factored critic for autoregressive actors
+    Q(s, a_drone, a_gimbal) = Q_drone(s, a_drone) + Q_gimbal(s, a_drone, a_gimbal)
+    Allows separate evaluation of:
+    - Base value of drone actions
+    - Additional value from gimbal coordination
+    """
+    def __init__(self, repr_dim, action_shape, feature_dim, hidden_dim):
+        super().__init__()
+        assert action_shape[0] == 5, f"Expected action_shape[0]=5, got {action_shape[0]}"
+
+        self.trunk = nn.Sequential(
+            nn.Linear(repr_dim, feature_dim),
+            nn.BatchNorm1d(feature_dim),
+            nn.Tanh()
+        )
+
+        # Q1: drone component + joint component
+        self.Q1_drone = nn.Sequential(
+            nn.Linear(feature_dim + 3, hidden_dim),  # repr + drone_action
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, 1)
+        )
+        self.Q1_joint = nn.Sequential(
+            nn.Linear(feature_dim + 5, hidden_dim),  # repr + full_action
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, 1)
+        )
+
+        # Q2: drone component + joint component
+        self.Q2_drone = nn.Sequential(
+            nn.Linear(feature_dim + 3, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, 1)
+        )
+        self.Q2_joint = nn.Sequential(
+            nn.Linear(feature_dim + 5, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, 1)
+        )
+
+        self.apply(utils.weight_init)
+
+    def forward(self, obs, action):
+        """
+        obs: [B, repr_dim]
+        action: [B, 5] = [drone(3), gimbal(2)]
+        return: Q1, Q2 each [B, 1]
+        """
+        h = self.trunk(obs)  # [B, feature_dim]
+        drone_action = action[:, :3]  # [B, 3]
+
+        # Q1 = Q1_drone(s, a_drone) + Q1_joint(s, a_full)
+        q1_d = self.Q1_drone(torch.cat([h, drone_action], dim=-1))
+        q1_j = self.Q1_joint(torch.cat([h, action], dim=-1))
+        q1 = q1_d + q1_j
+
+        # Q2 = Q2_drone(s, a_drone) + Q2_joint(s, a_full)
+        q2_d = self.Q2_drone(torch.cat([h, drone_action], dim=-1))
+        q2_j = self.Q2_joint(torch.cat([h, action], dim=-1))
+        q2 = q2_d + q2_j
+
+        return q1, q2
+
+
 class DrQV2Agent:
     """
-    Public API는 그대로 유지 + 선택 인자 추가:
+    Public API with extended selection options:
       - enc (encoder_type): 'org' | 'A' | 'B'
-      - enc_cfg: dict (인코더별 하이퍼파라미터 전달)
-      - state_dim_per_frame: 기본 11 (vx,vy,vz, qd(4), qg(4))
-    기존 스크립트는 인자 추가 없이 그대로 동작합니다(encoder_type 기본 'org').
+      - enc_cfg: dict (encoder hyperparameters)
+      - actor_type: 'original' | 'autoregressive_gimbal_first' | 'autoregressive_drone_first' | 'multihead_attention'
+      - actor_cfg: dict (actor hyperparameters)
+      - critic_type: 'original' | 'factored'
+      - state_dim_per_frame: default 11 (vx,vy,vz, qd(4), qg(4))
     """
     def __init__(self, obs_shape, action_shape, device, lr, feature_dim,
                  hidden_dim, critic_target_tau, num_expl_steps,
@@ -505,6 +799,9 @@ class DrQV2Agent:
                  frame_stack=3,
                  enc: str = 'not_received',
                  enc_cfg: dict = None,
+                 actor_type: str = 'original',
+                 actor_cfg: dict = None,
+                 critic_type: str = 'original',
                  state_dim_per_frame: int = 11):
         self.device = device
         self.critic_target_tau = critic_target_tau
@@ -516,6 +813,9 @@ class DrQV2Agent:
         self.frame_stack = frame_stack
         self.encoder_type = enc
         self.encoder_cfg = enc_cfg or {}
+        self.actor_type = actor_type
+        self.actor_cfg = actor_cfg or {}
+        self.critic_type = critic_type
         self.state_dim_per_frame = state_dim_per_frame
 
         # Encoder 선택/생성
@@ -549,10 +849,37 @@ class DrQV2Agent:
         else:
             raise ValueError(f"Unknown encoder_type: {enc}")
 
-        # Actor / Critic
-        self.actor = Actor(self.encoder.repr_dim, action_shape, feature_dim, hidden_dim).to(device)
-        self.critic = Critic(self.encoder.repr_dim, action_shape, feature_dim, hidden_dim).to(device)
-        self.critic_target = Critic(self.encoder.repr_dim, action_shape, feature_dim, hidden_dim).to(device)
+        # Actor 선택/생성
+        print(f"[DrQV2Agent] Creating actor with type: {actor_type}")
+        if actor_type == 'original':
+            self.actor = Actor(self.encoder.repr_dim, action_shape, feature_dim, hidden_dim).to(device)
+        elif actor_type == 'autoregressive_gimbal_first':
+            self.actor = AutoregressiveActorGimbalFirst(
+                self.encoder.repr_dim, action_shape, feature_dim, hidden_dim
+            ).to(device)
+        elif actor_type == 'autoregressive_drone_first':
+            self.actor = AutoregressiveActorDroneFirst(
+                self.encoder.repr_dim, action_shape, feature_dim, hidden_dim
+            ).to(device)
+        elif actor_type == 'multihead_attention':
+            nhead = self.actor_cfg.get('nhead', 4)
+            self.actor = MultiHeadAttentionActor(
+                self.encoder.repr_dim, action_shape, feature_dim, hidden_dim, nhead=nhead
+            ).to(device)
+        else:
+            raise ValueError(f"Unknown actor_type: {actor_type}")
+
+        # Critic 선택/생성
+        print(f"[DrQV2Agent] Creating critic with type: {critic_type}")
+        if critic_type == 'original':
+            self.critic = Critic(self.encoder.repr_dim, action_shape, feature_dim, hidden_dim).to(device)
+            self.critic_target = Critic(self.encoder.repr_dim, action_shape, feature_dim, hidden_dim).to(device)
+        elif critic_type == 'factored':
+            self.critic = FactoredCritic(self.encoder.repr_dim, action_shape, feature_dim, hidden_dim).to(device)
+            self.critic_target = FactoredCritic(self.encoder.repr_dim, action_shape, feature_dim, hidden_dim).to(device)
+        else:
+            raise ValueError(f"Unknown critic_type: {critic_type}")
+
         self.critic_target.load_state_dict(self.critic.state_dict())
 
         # Optimizers

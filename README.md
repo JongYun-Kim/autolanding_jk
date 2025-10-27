@@ -115,6 +115,16 @@ DrQv2 (Data-Regularized Q-learning v2) - off-policy actor-critic with:
 - Soft target updates
 - Data augmentation (random shifts + brightness)
 
+### Architecture Selection
+
+The agent now supports **multiple encoder, actor, and critic architectures** for ablation studies:
+
+- **Encoders**: 3 types (Baseline, Encoder A, Encoder B)
+- **Actors**: 4 types (Original, 2 autoregressive variants, Multi-head attention)
+- **Critics**: 2 types (Original, Factored)
+
+All combinations are configurable via Hydra. See `ACTOR_CRITIC_ARCHITECTURES_GUIDE.md` for details.
+
 ### Encoder Architectures
 
 Three encoder options for processing observations:
@@ -138,24 +148,68 @@ Three encoder options for processing observations:
 - Two-stage hierarchical processing
 - Configurable: `d_model`, `nhead`, `patch`, `depth_local`, `depth_temp`
 
-### Current Architecture (Actor & Critic)
+### Actor Architectures
 
-**Actor**:
+#### 1. **Original Actor** (`actor_type='original'`)
+- Baseline joint action generation
+- All 5 actions sampled simultaneously
 ```
 repr [B, repr_dim]
   → trunk (Linear + BN + Tanh) [B, feature_dim]
-  → policy (MLP) [B, action_dim=5]
+  → policy (MLP) [B, 5]
   → tanh → TruncatedNormal(mu, std)
 ```
 
-**Critic**:
+#### 2. **Autoregressive Gimbal-First** (`actor_type='autoregressive_gimbal_first'`)
+- Point-then-move strategy
+- Gimbal action → Drone action (conditioned)
+```
+repr → trunk → gimbal_policy → [pitch, yaw]
+              ↓
+         concat with repr → drone_policy → [vx, vy, vz]
+```
+
+#### 3. **Autoregressive Drone-First** (`actor_type='autoregressive_drone_first'`)
+- Move-then-point strategy
+- Drone action → Gimbal action (conditioned)
+```
+repr → trunk → drone_policy → [vx, vy, vz]
+              ↓
+         concat with repr → gimbal_policy → [pitch, yaw]
+```
+
+#### 4. **Multi-Head Attention Actor** (`actor_type='multihead_attention'`) ⭐ RECOMMENDED
+- Parallel but contextually-aware actions
+- Bidirectional coordination via attention
+```
+repr → trunk → [drone_query, gimbal_query]
+              ↓
+         cross-attention with obs
+              ↓
+         self-attention (drone ↔ gimbal)
+              ↓
+         [drone_policy, gimbal_policy]
+```
+
+### Critic Architectures
+
+#### 1. **Original Critic** (`critic_type='original'`)
+- Baseline joint Q-value estimation
 ```
 repr [B, repr_dim] + action [B, 5]
   → trunk (Linear + BN + Tanh) [B, feature_dim]
   → Q1/Q2 (MLP) [B, 1]
 ```
 
-**Joint Action Space**: `[vx, vy, vz, gimbal_pitch, gimbal_yaw]` (5D)
+#### 2. **Factored Critic** (`critic_type='factored'`)
+- Decomposes Q-value: `Q(s,a) = Q_drone(s,a_d) + Q_joint(s,a_full)`
+- Better for autoregressive actors
+```
+Q1 = Q1_drone(repr + drone_action) + Q1_joint(repr + full_action)
+Q2 = Q2_drone(repr + drone_action) + Q2_joint(repr + full_action)
+```
+
+**Action Space**: `[vx, vy, vz, gimbal_pitch, gimbal_yaw]` (5D, shared across all architectures)
 
 ## Environment: `LandingAviary.py`
 
@@ -217,8 +271,34 @@ feature_dim: 128                 # Feature dimension
 hidden_dim: 512                  # MLP hidden size
 batch_size: 512                  # Replay batch size
 
-# Encoder selection
-encoder_bundle.agent: enc_B      # enc_A | enc_B | original
+# Architecture selection
+encoder_bundle@agent: enc_B      # original | enc_A | enc_B
+actor_critic_bundle@agent: original  # original | autoregressive_gimbal_first |
+                                     # autoregressive_drone_first | multihead_attention |
+                                     # multihead_attention_factored
+```
+
+### Example Configurations
+
+**Baseline (original everything)**:
+```bash
+python train_gimbal_curriculum.py \
+  encoder_bundle@agent=original \
+  actor_critic_bundle@agent=original
+```
+
+**Recommended (Encoder B + Multi-head Attention)**:
+```bash
+python train_gimbal_curriculum.py \
+  encoder_bundle@agent=enc_B \
+  actor_critic_bundle@agent=multihead_attention
+```
+
+**Autoregressive (Encoder A + Gimbal-First + Factored Critic)**:
+```bash
+python train_gimbal_curriculum.py \
+  encoder_bundle@agent=enc_A \
+  actor_critic_bundle@agent=autoregressive_gimbal_first
 ```
 
 ### Curriculum Presets
@@ -327,24 +407,36 @@ If agent struggles to advance:
 - Adjust `cooldown_episodes` / `min_stage_episodes`
 - Modify stage scales in curriculum preset
 
-## Future Improvements (User Task #2)
+## Actor/Critic Architecture Improvements ✅ IMPLEMENTED
 
-The current actor/critic handles joint actions [drone, gimbal] together. Three potential improvements:
+The agent now supports multiple actor and critic architectures (previously Task #2):
 
-1. **Autoregressive Actor (Gimbal → Drone)**:
-   - First sample gimbal action
-   - Then sample drone action conditioned on gimbal
-   - Better for "point then move" strategies
+### Implemented Architectures
 
-2. **Autoregressive Actor (Drone → Gimbal)**:
-   - First sample drone action
-   - Then sample gimbal action conditioned on drone
-   - Better for "move then point" strategies
+1. **Autoregressive Actor (Gimbal → Drone)** ✅
+   - `actor_type='autoregressive_gimbal_first'`
+   - Point-then-move strategy
+   - Gimbal action sampled first, drone action conditioned on it
 
-3. **Multi-head Attention Actor**:
-   - Separate attention heads for drone and gimbal
-   - Cross-attention between drone/gimbal features
-   - Allows parallel but contextually-aware actions
+2. **Autoregressive Actor (Drone → Gimbal)** ✅
+   - `actor_type='autoregressive_drone_first'`
+   - Move-then-point strategy
+   - Drone action sampled first, gimbal action conditioned on it
+
+3. **Multi-Head Attention Actor** ✅ RECOMMENDED
+   - `actor_type='multihead_attention'`
+   - Parallel but contextually-aware actions
+   - Cross-attention between observation and action queries
+   - Self-attention for drone-gimbal coordination
+
+4. **Factored Critic** ✅
+   - `critic_type='factored'`
+   - Decomposes Q-value into drone base value + coordination value
+   - Recommended for use with autoregressive actors
+
+### Usage
+
+See `ACTOR_CRITIC_ARCHITECTURES_GUIDE.md` for detailed usage instructions and ablation study guidelines.
 
 ## Citation & Credits
 
