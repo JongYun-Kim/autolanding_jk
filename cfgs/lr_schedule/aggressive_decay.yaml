@@ -1,0 +1,40 @@
+# @package _global_
+
+# Aggressive step decay schedule
+# Recommended for faster convergence with risk of instability
+#
+# Strategy:
+# - Starts with higher LR (2e-4) for rapid initial learning
+# - Quick reduction at 1M steps to stabilize
+# - Multiple decay stages for fine-grained control
+# - Ends with very small LR (1e-5) for final refinement
+#
+# Best for: Time-constrained training, exploration experiments, when quick results needed
+
+lr_schedule:
+  encoder:
+    type: step_decay
+    intervals:
+      - {start: 0, end: 1000000, lr: 2.0e-4}
+      - {start: 1000000, end: 2000000, lr: 1.0e-4}
+      - {start: 2000000, end: 3000000, lr: 5.0e-5}
+      - {start: 3000000, end: 4000000, lr: 2.0e-5}
+      - {start: 4000000, end: 10000000, lr: 1.0e-5}
+
+  actor:
+    type: step_decay
+    intervals:
+      - {start: 0, end: 1000000, lr: 2.0e-4}
+      - {start: 1000000, end: 2000000, lr: 1.0e-4}
+      - {start: 2000000, end: 3000000, lr: 5.0e-5}
+      - {start: 3000000, end: 4000000, lr: 2.0e-5}
+      - {start: 4000000, end: 10000000, lr: 1.0e-5}
+
+  critic:
+    type: step_decay
+    intervals:
+      - {start: 0, end: 1000000, lr: 2.0e-4}
+      - {start: 1000000, end: 2000000, lr: 1.0e-4}
+      - {start: 2000000, end: 3000000, lr: 5.0e-5}
+      - {start: 3000000, end: 4000000, lr: 2.0e-5}
+      - {start: 4000000, end: 10000000, lr: 1.0e-5}

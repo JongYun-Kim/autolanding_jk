@@ -1,0 +1,40 @@
+# @package _global_
+
+# Curriculum stage-aligned learning rate schedule
+# Recommended for curriculum learning scenarios
+#
+# Strategy:
+# - Aligned with typical curriculum progression (5 stages over 6M steps)
+# - Higher LR in early stages when learning basic behaviors
+# - Gradual reduction as curriculum advances to harder stages
+# - Allows policy to adapt to increasing task difficulty
+#
+# Best for: Curriculum learning, staged training, when using balanced/conservative curriculum presets
+
+lr_schedule:
+  encoder:
+    type: step_decay
+    intervals:
+      - {start: 0, end: 500000, lr: 1.2e-4}      # Stage 0-1: Basic control learning
+      - {start: 500000, end: 1500000, lr: 1.0e-4}  # Stage 2: Intermediate
+      - {start: 1500000, end: 3000000, lr: 7.0e-5}  # Stage 3: Advanced
+      - {start: 3000000, end: 5000000, lr: 5.0e-5}  # Stage 4: Fine-tuning
+      - {start: 5000000, end: 10000000, lr: 3.0e-5} # Extended training
+
+  actor:
+    type: step_decay
+    intervals:
+      - {start: 0, end: 500000, lr: 1.2e-4}
+      - {start: 500000, end: 1500000, lr: 1.0e-4}
+      - {start: 1500000, end: 3000000, lr: 7.0e-5}
+      - {start: 3000000, end: 5000000, lr: 5.0e-5}
+      - {start: 5000000, end: 10000000, lr: 3.0e-5}
+
+  critic:
+    type: step_decay
+    intervals:
+      - {start: 0, end: 500000, lr: 1.2e-4}
+      - {start: 500000, end: 1500000, lr: 1.0e-4}
+      - {start: 1500000, end: 3000000, lr: 7.0e-5}
+      - {start: 3000000, end: 5000000, lr: 5.0e-5}
+      - {start: 5000000, end: 10000000, lr: 3.0e-5}
