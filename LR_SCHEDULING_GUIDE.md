@@ -62,11 +62,7 @@ lr_schedule:
   encoder:
     type: exponential_decay
     intervals:
-      - start: 0
-        end: 3000000
-        init_lr: 1.0e-4
-        decay_rate: 0.9995       # Multiply by this every decay_interval
-        decay_interval: 10000     # Decay every 10K steps
+      - {start: 0, end: 3000000, init_lr: 1.0e-4, decay_rate: 0.9995, decay_interval: 10000}
 ```
 
 ### 3. Linear Decay
@@ -111,16 +107,8 @@ lr_schedule:
   actor:
     type: exponential_decay
     intervals:
-      - start: 0
-        end: 2000000
-        init_lr: 1.5e-4
-        decay_rate: 0.999
-        decay_interval: 5000
-      - start: 2000000
-        end: 10000000
-        init_lr: 7.0e-5
-        decay_rate: 0.9995
-        decay_interval: 10000
+      - {start: 0, end: 2000000, init_lr: 1.5e-4, decay_rate: 0.999, decay_interval: 5000}
+      - {start: 2000000, end: 10000000, init_lr: 7.0e-5, decay_rate: 0.9995, decay_interval: 10000}
 
   # Critic: Smooth linear decay
   critic:
@@ -153,6 +141,16 @@ intervals:
 intervals:
   - {start: 0, end: 2000000, lr: 1.0e-4}
   - {start: 1000000, end: 3000000, lr: 5.0e-5}  # ERROR: overlap at 1M-2M
+```
+
+**Alternative format:** Hierarchical YAML format is also supported (both formats are equivalent):
+```yaml
+intervals:
+  - start: 0
+    end: 1000000
+    init_lr: 1.0e-4
+    decay_rate: 0.999
+    decay_interval: 5000
 ```
 
 ## Monitoring
