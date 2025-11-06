@@ -159,6 +159,58 @@ class ExponentialDecayScheduler(LRScheduler):
         return lr
 
 
+class LinearDecayScheduler(LRScheduler):
+    """
+    Linear learning rate decay.
+
+    Learning rate interpolates linearly between init_lr and final_lr over the interval:
+    lr = init_lr + (final_lr - init_lr) * progress
+    where progress = (step - interval_start) / (interval_end - interval_start)
+
+    Example config:
+        intervals:
+          - {start: 0, end: 2000000, init_lr: 1.0e-4, final_lr: 1.0e-5}
+          - {start: 2000000, end: 4000000, init_lr: 1.0e-5, final_lr: 1.0e-6}
+    """
+
+    def _parse_intervals(self, intervals: List[Dict]) -> List[Dict]:
+        """Parse and validate linear decay intervals"""
+        parsed = super()._parse_intervals(intervals)
+
+        # Validate required fields
+        for interval in parsed:
+            if 'init_lr' not in interval:
+                raise ValueError(f"LinearDecayScheduler requires 'init_lr' in interval: {interval}")
+            if 'final_lr' not in interval:
+                raise ValueError(f"LinearDecayScheduler requires 'final_lr' in interval: {interval}")
+            if interval['end'] == float('inf'):
+                raise ValueError(f"LinearDecayScheduler requires finite 'end' in interval: {interval}")
+
+        return parsed
+
+    def get_lr(self, global_step: int) -> float:
+        interval = self.get_current_interval(global_step)
+
+        if interval is None:
+            # No interval defined, return current LR or default
+            if self.current_lr is not None:
+                return self.current_lr
+            return self.optimizer.param_groups[0]['lr']
+
+        # Calculate linear interpolation progress
+        interval_length = interval['end'] - interval['start']
+        if interval_length == 0:
+            return interval['init_lr']
+
+        steps_in_interval = global_step - interval['start']
+        progress = min(steps_in_interval / interval_length, 1.0)
+
+        # Linear interpolation
+        lr = interval['init_lr'] + (interval['final_lr'] - interval['init_lr']) * progress
+
+        return lr
+
+
 class ConstantLRScheduler(LRScheduler):
     """
     Constant learning rate (no scheduling).
@@ -221,6 +273,8 @@ def create_lr_scheduler(
         return StepDecayScheduler(optimizer, intervals, name)
     elif scheduler_type == 'exponential_decay':
         return ExponentialDecayScheduler(optimizer, intervals, name)
+    elif scheduler_type == 'linear_decay':
+        return LinearDecayScheduler(optimizer, intervals, name)
     elif scheduler_type == 'constant':
         return ConstantLRScheduler(optimizer, default_lr, name)
     else:

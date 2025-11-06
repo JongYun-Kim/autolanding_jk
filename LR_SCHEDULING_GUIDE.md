@@ -1,282 +1,207 @@
 # Learning Rate Scheduling Guide
 
-This guide explains how to use learning rate scheduling in your RL training pipeline.
-
-## Overview
-
-Learning rate scheduling allows you to dynamically adjust learning rates during training for the encoder, actor, and critic networks independently. This can improve convergence, stability, and final performance.
+This guide explains how to use and customize learning rate scheduling for encoder, actor, and critic networks.
 
 ## Quick Start
 
-### Using Presets (Recommended)
-
-The easiest way to use LR scheduling is through presets:
+Use one of the available presets via command line:
 
 ```bash
-# Use gentle step decay (recommended for most cases)
-python train_gimbal_curriculum.py lr_schedule=gentle_decay
-
-# Use aggressive decay for faster training
-python train_gimbal_curriculum.py lr_schedule=aggressive_decay
-
-# Use curriculum-aligned scheduling
-python train_gimbal_curriculum.py lr_schedule=stage_based
-
-# Use no scheduling (default, backward compatible)
+# No scheduling (constant LR, default)
 python train_gimbal_curriculum.py lr_schedule=constant
+
+# Step decay
+python train_gimbal_curriculum.py lr_schedule=step_decay
+
+# Exponential decay
+python train_gimbal_curriculum.py lr_schedule=exponential_decay
+
+# Linear decay
+python train_gimbal_curriculum.py lr_schedule=linear_decay
+
+# Mixed types across networks
+python train_gimbal_curriculum.py lr_schedule=mixed_schedule
 ```
 
-### Available Presets
-
-| Preset | Type | Description | Best For |
-|--------|------|-------------|----------|
-| `constant` | None | No scheduling (default LR throughout) | Baseline, backward compatibility |
-| `gentle_decay` | Step | Gradual 2-stage decay | Stable training, risk-averse |
-| `aggressive_decay` | Step | Fast 4-stage decay | Quick convergence, exploration |
-| `exponential_smooth` | Exponential | Continuous smooth decay | Sensitive tasks, avoiding instabilities |
-| `stage_based` | Step | Aligned with curriculum stages | Curriculum learning scenarios |
-| `differential` | Mixed | Different schedules per network | Advanced tuning, specific issues |
+The system is **backward compatible**: running without `lr_schedule` uses constant LR (same as before).
 
 ## Schedule Types
 
 ### 1. Step Decay
 
-Learning rate changes to fixed values at specific step boundaries.
+LR changes to fixed values at step boundaries.
 
-**Example:**
+**Equation:**
+```
+lr = lr_i    if start_i ≤ step < end_i
+```
+
+**Config:**
 ```yaml
 lr_schedule:
   encoder:
     type: step_decay
     intervals:
-      - {start: 0, end: 1000000, lr: 1.0e-4}      # 0-1M steps: LR = 1e-4
-      - {start: 1000000, end: 3000000, lr: 5.0e-5}  # 1M-3M steps: LR = 5e-5
-      - {start: 3000000, end: 6000000, lr: 1.0e-5}  # 3M-6M steps: LR = 1e-5
+      - {start: 0, end: 2000000, lr: 1.0e-4}
+      - {start: 2000000, end: 4000000, lr: 5.0e-5}
 ```
 
 ### 2. Exponential Decay
 
-Learning rate decays exponentially: `lr = init_lr * (decay_rate ^ num_decays)`
+LR decays exponentially at regular intervals.
 
-**Example:**
+**Equation:**
+```
+lr = init_lr × (decay_rate)^n
+where n = (step - start) // decay_interval
+```
+
+**Config:**
 ```yaml
 lr_schedule:
   encoder:
     type: exponential_decay
     intervals:
       - start: 0
-        end: 1000000
+        end: 3000000
         init_lr: 1.0e-4
-        decay_rate: 0.999      # Multiply by 0.999 every decay_interval
-        decay_interval: 1000    # Decay every 1000 steps
+        decay_rate: 0.9995       # Multiply by this every decay_interval
+        decay_interval: 10000     # Decay every 10K steps
 ```
 
-## Custom Configurations
+### 3. Linear Decay
 
-### Per-Network Scheduling
+LR interpolates linearly between init_lr and final_lr.
 
-Configure different schedules for encoder, actor, and critic:
+**Equation:**
+```
+lr = init_lr + (final_lr - init_lr) × progress
+where progress = (step - start) / (end - start)
+```
 
+**Config:**
 ```yaml
 lr_schedule:
-  # Encoder: Conservative (stable features)
   encoder:
-    type: step_decay
+    type: linear_decay
     intervals:
-      - {start: 0, end: 3000000, lr: 8.0e-5}
-
-  # Actor: Moderate (exploration to exploitation)
-  actor:
-    type: exponential_decay
-    intervals:
-      - {start: 0, end: 2000000, init_lr: 1.2e-4, decay_rate: 0.999, decay_interval: 5000}
-
-  # Critic: Aggressive (fast convergence)
-  critic:
-    type: step_decay
-    intervals:
-      - {start: 0, end: 1000000, lr: 1.5e-4}
-      - {start: 1000000, end: 3000000, lr: 5.0e-5}
+      - {start: 0, end: 3000000, init_lr: 1.0e-4, final_lr: 2.0e-5}
 ```
 
-### Creating Custom Presets
+## Creating Custom Schedules
 
-1. Create a new file in `cfgs/lr_schedule/your_preset.yaml`:
+You can mix different schedule types for encoder, actor, and critic:
+
+**Example: Custom mixed schedule**
+
+Create `cfgs/lr_schedule/my_schedule.yaml`:
 
 ```yaml
 # @package _global_
 
 lr_schedule:
+  # Encoder: Conservative step decay
   encoder:
     type: step_decay
     intervals:
-      - {start: 0, end: 2000000, lr: 1.0e-4}
-      - {start: 2000000, end: 6000000, lr: 5.0e-5}
+      - {start: 0, end: 3000000, lr: 8.0e-5}
+      - {start: 3000000, end: 10000000, lr: 4.0e-5}
 
+  # Actor: Aggressive exponential decay
   actor:
-    type: step_decay
+    type: exponential_decay
     intervals:
-      - {start: 0, end: 2000000, lr: 1.0e-4}
-      - {start: 2000000, end: 6000000, lr: 5.0e-5}
+      - start: 0
+        end: 2000000
+        init_lr: 1.5e-4
+        decay_rate: 0.999
+        decay_interval: 5000
+      - start: 2000000
+        end: 10000000
+        init_lr: 7.0e-5
+        decay_rate: 0.9995
+        decay_interval: 10000
 
+  # Critic: Smooth linear decay
   critic:
-    type: step_decay
+    type: linear_decay
     intervals:
-      - {start: 0, end: 2000000, lr: 1.0e-4}
-      - {start: 2000000, end: 6000000, lr: 5.0e-5}
+      - {start: 0, end: 2500000, init_lr: 1.2e-4, final_lr: 3.0e-5}
+      - {start: 2500000, end: 6000000, init_lr: 3.0e-5, final_lr: 1.0e-5}
 ```
 
-2. Use it: `python train_gimbal_curriculum.py lr_schedule=your_preset`
+Use it: `python train_gimbal_curriculum.py lr_schedule=my_schedule`
 
-### Override via Command Line
+## Interval Rules
 
-Override specific parameters:
+**Contiguous intervals (recommended):**
+```yaml
+intervals:
+  - {start: 0, end: 1000000, lr: 1.0e-4}
+  - {start: 1000000, end: 2000000, lr: 5.0e-5}  # end matches next start
+```
 
-```bash
-# Override just the encoder schedule
-python train_gimbal_curriculum.py \
-  lr_schedule=gentle_decay \
-  lr_schedule.encoder.intervals.0.lr=2.0e-4
+**Gaps (allowed):** LR remains at previous value during gap.
+```yaml
+intervals:
+  - {start: 0, end: 1000000, lr: 1.0e-4}
+  - {start: 2000000, end: 3000000, lr: 5.0e-5}  # Gap: steps 1M-2M stay at 1e-4
+```
 
-# Change schedule type for actor
-python train_gimbal_curriculum.py \
-  lr_schedule=gentle_decay \
-  lr_schedule.actor.type=exponential_decay
+**Overlaps (forbidden):** Training will fail with ValueError.
+```yaml
+intervals:
+  - {start: 0, end: 2000000, lr: 1.0e-4}
+  - {start: 1000000, end: 3000000, lr: 5.0e-5}  # ERROR: overlap at 1M-2M
 ```
 
 ## Monitoring
 
-Learning rates are automatically logged to TensorBoard under:
-- `lr_encoder`
-- `lr_actor`
-- `lr_critic`
+Learning rates are automatically logged to TensorBoard:
+- `lr_encoder` - Encoder learning rate
+- `lr_actor` - Actor learning rate
+- `lr_critic` - Critic learning rate
 
-Monitor these curves to verify your schedule is working as expected.
+Check these curves to verify your schedule is working as expected.
 
-## Recommendations
+## Implementation Structure
 
-### For Standard Training (6M steps)
+**Overview:**
+1. **Scheduler classes** (`lr_scheduler.py`): `StepDecayScheduler`, `ExponentialDecayScheduler`, `LinearDecayScheduler`, `ConstantLRScheduler`
+2. **Agent integration** (`drqv2-w-new_nets.py`): Schedulers created in `__init__`, updated in `update()`
+3. **Config management** (`cfgs/`): Hydra presets for easy composition
 
-**Start with:** `gentle_decay`
-- Proven safe and stable
-- Good baseline for comparison
-- 3-stage decay: 1e-4 → 5e-5 → 2.5e-5
+**Flow:**
+1. Agent receives `lr_schedule` config (or `None` for constant LR)
+2. `create_multi_optimizer_schedulers()` creates scheduler per optimizer
+3. On each `agent.update(step)`:
+   - Each scheduler calculates LR for current step
+   - Updates optimizer's `param_groups[0]['lr']` if changed
+   - Logs to TensorBoard if `use_tb=True`
 
-### For Curriculum Learning
+**Key functions:**
+- `create_lr_scheduler()`: Factory for single optimizer
+- `create_multi_optimizer_schedulers()`: Factory for encoder/actor/critic
+- `LRScheduler.step(global_step)`: Update LR based on current step
+- `LRScheduler.get_lr(global_step)`: Calculate LR for given step
 
-**Start with:** `stage_based`
-- Aligned with curriculum progression
-- Higher LR early, lower as difficulty increases
-- Natural fit for staged learning
+**Backward compatibility:**
+- If `lr_schedule` is `None` or not provided, uses `ConstantLRScheduler`
+- Returns constant LR equal to `lr` from config
+- No behavior change from previous code
 
-### For Quick Experiments
+## Command Line Overrides
 
-**Start with:** `aggressive_decay`
-- Faster convergence
-- More decay stages
-- May sacrifice some final performance for speed
-
-### For Sensitive/Unstable Training
-
-**Start with:** `exponential_smooth`
-- Gradual, continuous decay
-- No sudden changes
-- Better for avoiding training instabilities
-
-### For Advanced Users
-
-**Start with:** `differential`
-- Different schedules per network
-- Tune encoder, actor, critic independently
-- Best when you know specific components need adjustment
-
-## Backward Compatibility
-
-**Default behavior:** If you don't specify `lr_schedule`, the system uses a constant learning rate (same as before this feature was added).
+Override specific parameters:
 
 ```bash
-# These are equivalent (constant LR = 1e-4)
-python train_gimbal_curriculum.py
-python train_gimbal_curriculum.py lr_schedule=constant
-```
-
-## Troubleshooting
-
-### Training becomes unstable
-
-- Try `gentle_decay` or `exponential_smooth`
-- Reduce initial learning rate: `lr=5.0e-5`
-- Increase decay rate for exponential: `decay_rate=0.9998`
-
-### Convergence too slow
-
-- Try `aggressive_decay`
-- Increase initial learning rate: `lr=2.0e-4`
-- Delay first decay step
-
-### Actor/Critic imbalance
-
-- Use `differential` preset
-- Adjust individual network schedules
-- Monitor `lr_encoder`, `lr_actor`, `lr_critic` in TensorBoard
-
-### Schedule not matching curriculum
-
-- Use `stage_based` preset
-- Manually align interval boundaries with your curriculum stages
-- Check curriculum advancement with `curriculum/stage` metric
-
-## Examples
-
-### Example 1: Standard Training
-
-```bash
+# Change encoder's first interval LR
 python train_gimbal_curriculum.py \
-  lr_schedule=gentle_decay \
-  curriculum_preset=balanced \
-  encoder_bundle@agent=enc_B
-```
+  lr_schedule=step_decay \
+  lr_schedule.encoder.intervals.0.lr=2.0e-4
 
-### Example 2: Fast Training
-
-```bash
+# Change actor's decay rate
 python train_gimbal_curriculum.py \
-  lr_schedule=aggressive_decay \
-  lr=2.0e-4 \
-  num_train_frames=3000000
+  lr_schedule=exponential_decay \
+  lr_schedule.actor.intervals.0.decay_rate=0.999
 ```
-
-### Example 3: Custom Multi-Phase Training
-
-```bash
-python train_gimbal_curriculum.py \
-  lr_schedule=differential \
-  lr_schedule.encoder.intervals.0.lr=1.0e-4 \
-  lr_schedule.actor.intervals.0.init_lr=1.5e-4 \
-  lr_schedule.critic.intervals.0.lr=2.0e-4
-```
-
-### Example 4: Curriculum-Aligned
-
-```bash
-python train_gimbal_curriculum.py \
-  lr_schedule=stage_based \
-  curriculum_preset=conservative
-```
-
-## Technical Details
-
-- Schedulers are implemented in `lr_scheduler.py`
-- Integration in `drqv2-w-new_nets.py` (lines 509, 564-571, 666-670)
-- LR updates happen every `update_every_steps` (default: 2)
-- Schedulers use global step count for timing
-- Intervals are validated to prevent overlaps
-
-## Best Practices
-
-1. **Start simple:** Use presets before creating custom configs
-2. **Monitor closely:** Check TensorBoard LR curves match expectations
-3. **Align with curriculum:** If using curriculum, consider `stage_based`
-4. **Same schedule initially:** Use same schedule for all networks first
-5. **Iterate gradually:** Make small adjustments, don't change everything at once
-6. **Document experiments:** Keep track of which schedules work for your task

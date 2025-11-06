@@ -1,0 +1,36 @@
+# @package _global_
+
+# Mixed Schedule Example
+# Different scheduler types for different networks
+# Shows how to combine step_decay, exponential_decay, and linear_decay
+
+lr_schedule:
+  # Encoder: Step decay (discrete changes)
+  encoder:
+    type: step_decay
+    intervals:
+      - {start: 0, end: 2000000, lr: 8.0e-5}
+      - {start: 2000000, end: 5000000, lr: 4.0e-5}
+      - {start: 5000000, end: 10000000, lr: 2.0e-5}
+
+  # Actor: Exponential decay (continuous smooth decay)
+  actor:
+    type: exponential_decay
+    intervals:
+      - start: 0
+        end: 2500000
+        init_lr: 1.2e-4
+        decay_rate: 0.999
+        decay_interval: 5000
+      - start: 2500000
+        end: 10000000
+        init_lr: 6.0e-5
+        decay_rate: 0.9995
+        decay_interval: 10000
+
+  # Critic: Linear decay (linear interpolation)
+  critic:
+    type: linear_decay
+    intervals:
+      - {start: 0, end: 2000000, init_lr: 1.5e-4, final_lr: 5.0e-5}
+      - {start: 2000000, end: 5000000, init_lr: 5.0e-5, final_lr: 1.0e-5}

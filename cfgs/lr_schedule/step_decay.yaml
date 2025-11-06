@@ -1,0 +1,26 @@
+# @package _global_
+
+# Step Decay Example
+# Learning rate changes to fixed values at specific step boundaries
+
+lr_schedule:
+  encoder:
+    type: step_decay
+    intervals:
+      - {start: 0, end: 2000000, lr: 1.0e-4}
+      - {start: 2000000, end: 4000000, lr: 5.0e-5}
+      - {start: 4000000, end: 10000000, lr: 2.0e-5}
+
+  actor:
+    type: step_decay
+    intervals:
+      - {start: 0, end: 2000000, lr: 1.0e-4}
+      - {start: 2000000, end: 4000000, lr: 5.0e-5}
+      - {start: 4000000, end: 10000000, lr: 2.0e-5}
+
+  critic:
+    type: step_decay
+    intervals:
+      - {start: 0, end: 2000000, lr: 1.0e-4}
+      - {start: 2000000, end: 4000000, lr: 5.0e-5}
+      - {start: 4000000, end: 10000000, lr: 2.0e-5}
