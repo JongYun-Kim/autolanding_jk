@@ -41,10 +41,13 @@ class BaseSingleAgentAviary(BaseAviary):
                  freq: int=240,
                  aggregate_phy_steps: int=10,
                  gui=False,
-                 record=False, 
+                 record=False,
                  obs: ObservationType=ObservationType.KIN,
                  act: ActionType=ActionType.RPM,
                  episode_len_sec: int=30,
+                 gv_path_type: str="straight",
+                 gv_sinusoidal_amplitude: float=2.0,
+                 gv_sinusoidal_frequency: float=0.5
                  ):
         """Initialization of a generic single agent RL environment.
 
@@ -73,6 +76,12 @@ class BaseSingleAgentAviary(BaseAviary):
             The type of observation space (kinematic information or vision)
         act : ActionType, optional
             The type of action space (1 or 3D; RPMS, thurst and torques, waypoint or velocity with PID control; etc.)
+        gv_path_type : str, optional
+            Type of path for the ground vehicle/landing pad. Options: "straight" (default), "sinusoidal".
+        gv_sinusoidal_amplitude : float, optional
+            Amplitude of sinusoidal oscillation in meters (only used if gv_path_type="sinusoidal"). Default: 2.0.
+        gv_sinusoidal_frequency : float, optional
+            Frequency of sinusoidal oscillation in Hz (only used if gv_path_type="sinusoidal"). Default: 0.5.
         """
         vision_attributes = True if obs == ObservationType.RGB else False
         dynamics_attributes = True if act in [ActionType.DYN, ActionType.ONE_D_DYN] else False
@@ -106,15 +115,18 @@ class BaseSingleAgentAviary(BaseAviary):
                          num_drones=1,
                          initial_xyzs=initial_xyzs,
                          initial_rpys=initial_rpys,
-                         physics=physics, 
+                         physics=physics,
                          freq=freq,
                          aggregate_phy_steps=aggregate_phy_steps,
                          gui=gui,
-                         record=record, 
+                         record=record,
                          obstacles=False, # Add obstacles for RGB observations and/or FlyThruGate
                          user_debug_gui=False, # Remove of RPM sliders from all single agent learning aviaries
                          vision_attributes=vision_attributes,
-                         dynamics_attributes=dynamics_attributes
+                         dynamics_attributes=dynamics_attributes,
+                         gv_path_type=gv_path_type,
+                         gv_sinusoidal_amplitude=gv_sinusoidal_amplitude,
+                         gv_sinusoidal_frequency=gv_sinusoidal_frequency
                          )
         # Set a limit on the maximum target speed
         #Z needs its own speed limit
