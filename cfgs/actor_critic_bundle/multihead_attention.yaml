@@ -1,0 +1,5 @@
+# Multi-head attention actor (recommended, most flexible)
+actor_type: multihead_attention
+actor_cfg:
+  nhead: 4  # Number of attention heads
+critic_type: original  # Can use original or factored critic

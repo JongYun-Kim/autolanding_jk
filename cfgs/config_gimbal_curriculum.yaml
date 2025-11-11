@@ -2,7 +2,8 @@ defaults:
   - _self_
   - task@_global_: landing-aviary-v0-gimbal-curriculum
   - curriculum_preset: balanced  # conservative | balanced | aggressive
-  - encoder_bundle@agent: enc_B
+  - encoder_bundle@agent: original
+  - actor_critic_bundle@agent: original  # original | autoregressive_gimbal_first | autoregressive_drone_first | multihead_attention | multihead_attention_factored
   - lr_schedule: constant  # constant | step_decay | exponential_decay | linear_decay | mixed_schedule
   - override hydra/launcher: submitit_local
 

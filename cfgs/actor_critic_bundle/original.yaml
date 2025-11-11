@@ -1,0 +1,4 @@
+# Original actor and critic (baseline)
+actor_type: original
+actor_cfg: null
+critic_type: original
