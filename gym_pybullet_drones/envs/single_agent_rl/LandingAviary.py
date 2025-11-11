@@ -25,10 +25,13 @@ class LandingAviary(BaseSingleAgentAviary):
                  freq: int= 240,
                  aggregate_phy_steps: int=10,
                  gui=False,
-                 record=False, 
+                 record=False,
                  obs: ObservationType=ObservationType.RGB,
                  act: ActionType=ActionType.VEL,
                  episode_len_sec: int=18,
+                 gv_path_type: str="straight",
+                 gv_sinusoidal_amplitude: float=2.0,
+                 gv_sinusoidal_frequency: float=0.5
                  ):
         """Initialization of a single agent RL environment.
 
@@ -65,6 +68,9 @@ class LandingAviary(BaseSingleAgentAviary):
                          obs=obs,
                          act=act,
                          episode_len_sec=episode_len_sec,
+                         gv_path_type=gv_path_type,
+                         gv_sinusoidal_amplitude=gv_sinusoidal_amplitude,
+                         gv_sinusoidal_frequency=gv_sinusoidal_frequency
                          )
 
         self.num_step_repeats = 4
@@ -311,6 +317,9 @@ class LandingGimbalAviary(LandingAviary):
                  obs: ObservationType=ObservationType.RGB,
                  act: ActionType=ActionType.VEL,
                  episode_len_sec: int=18,
+                 gv_path_type: str="straight",
+                 gv_sinusoidal_amplitude: float=2.0,
+                 gv_sinusoidal_frequency: float=0.5
                  ):
 
         self._cam_dir_local = np.array([0.0, 0.0, -1.0], dtype=np.float64)  # camera forward (-z)
@@ -361,7 +370,10 @@ class LandingGimbalAviary(LandingAviary):
                          record=record,
                          obs=obs,
                          act=act,
-                         episode_len_sec=episode_len_sec)
+                         episode_len_sec=episode_len_sec,
+                         gv_path_type=gv_path_type,
+                         gv_sinusoidal_amplitude=gv_sinusoidal_amplitude,
+                         gv_sinusoidal_frequency=gv_sinusoidal_frequency)
 
     def _observationSpace(self):
         if self.OBS_TYPE == ObservationType.RGB:
@@ -779,6 +791,9 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
                  obs: ObservationType = ObservationType.RGB,
                  act: ActionType = ActionType.VEL,
                  episode_len_sec: int = 18,
+                 gv_path_type: str="straight",
+                 gv_sinusoidal_amplitude: float=2.0,
+                 gv_sinusoidal_frequency: float=0.5
                  ):
         super().__init__(drone_model=drone_model,
                          initial_xyzs=initial_xyzs,
@@ -790,7 +805,10 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
                          record=record,
                          obs=obs,
                          act=act,
-                         episode_len_sec=episode_len_sec)
+                         episode_len_sec=episode_len_sec,
+                         gv_path_type=gv_path_type,
+                         gv_sinusoidal_amplitude=gv_sinusoidal_amplitude,
+                         gv_sinusoidal_frequency=gv_sinusoidal_frequency)
 
         # 커리큘럼 상태
         self.use_curriculum = use_curriculum

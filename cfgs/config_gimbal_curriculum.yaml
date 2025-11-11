@@ -4,6 +4,7 @@ defaults:
   - curriculum_preset: balanced  # conservative | balanced | aggressive
   - encoder_bundle@agent: original
   - actor_critic_bundle@agent: original  # original | autoregressive_gimbal_first | autoregressive_drone_first | multihead_attention | multihead_attention_factored
+  - lr_schedule: constant  # constant | step_decay | exponential_decay | linear_decay | mixed_schedule
   - override hydra/launcher: submitit_local
 
 # task settings
@@ -50,6 +51,7 @@ agent:
   stddev_schedule: ${stddev_schedule}
   stddev_clip: 0.32
   frame_stack: ${frame_stack}
+  lr_schedule: ${lr_schedule}
 
 hydra:
   run:

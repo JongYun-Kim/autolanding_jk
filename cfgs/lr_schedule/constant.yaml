@@ -1,0 +1,7 @@
+# @package _global_
+
+# Constant learning rate (no scheduling)
+# This is the default behavior for backward compatibility
+# Use this when you want a fixed learning rate throughout training
+
+lr_schedule: null

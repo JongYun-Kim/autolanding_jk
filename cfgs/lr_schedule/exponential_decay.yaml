@@ -1,0 +1,24 @@
+# @package _global_
+
+# Exponential Decay Example
+# Learning rate decays continuously: lr = init_lr * (decay_rate ^ num_decays)
+# where num_decays = (step - interval_start) // decay_interval
+
+lr_schedule:
+  encoder:
+    type: exponential_decay
+    intervals:
+      - {start: 0, end: 3000000, init_lr: 1.0e-4, decay_rate: 0.9995, decay_interval: 10000}
+      - {start: 3000000, end: 10000000, init_lr: 5.0e-5, decay_rate: 0.999, decay_interval: 10000}
+
+  actor:
+    type: exponential_decay
+    intervals:
+      - {start: 0, end: 3000000, init_lr: 1.0e-4, decay_rate: 0.9995, decay_interval: 10000}
+      - {start: 3000000, end: 10000000, init_lr: 5.0e-5, decay_rate: 0.999, decay_interval: 10000}
+
+  critic:
+    type: exponential_decay
+    intervals:
+      - {start: 0, end: 3000000, init_lr: 1.0e-4, decay_rate: 0.9995, decay_interval: 10000}
+      - {start: 3000000, end: 10000000, init_lr: 5.0e-5, decay_rate: 0.999, decay_interval: 10000}

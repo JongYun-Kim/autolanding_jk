@@ -1,0 +1,24 @@
+# @package _global_
+
+# Linear Decay Example
+# Learning rate interpolates linearly: lr = init_lr + (final_lr - init_lr) * progress
+# where progress = (step - interval_start) / (interval_end - interval_start)
+
+lr_schedule:
+  encoder:
+    type: linear_decay
+    intervals:
+      - {start: 0, end: 3000000, init_lr: 1.0e-4, final_lr: 2.0e-5}
+      - {start: 3000000, end: 6000000, init_lr: 2.0e-5, final_lr: 5.0e-6}
+
+  actor:
+    type: linear_decay
+    intervals:
+      - {start: 0, end: 3000000, init_lr: 1.0e-4, final_lr: 2.0e-5}
+      - {start: 3000000, end: 6000000, init_lr: 2.0e-5, final_lr: 5.0e-6}
+
+  critic:
+    type: linear_decay
+    intervals:
+      - {start: 0, end: 3000000, init_lr: 1.0e-4, final_lr: 2.0e-5}
+      - {start: 3000000, end: 6000000, init_lr: 2.0e-5, final_lr: 5.0e-6}
