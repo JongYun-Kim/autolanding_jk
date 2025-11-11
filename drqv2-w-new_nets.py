@@ -11,9 +11,8 @@ class RandomBrigthnessAug(nn.Module):
         self.device = device
 
     def forward(self, x):
-        # x: [B, C, H, W], 값 범위 [0,255] 가정
+        # x: [B, C, H, W], range [0,255] assumed
         n, c, h, w = x.size()
-        # factors = torch.FloatTensor(n, c, 1, 1).uniform_(1-self.range, 1+self.range).to(self.device)
         factors = torch.empty((n, c, 1, 1), device=self.device).uniform_(1 - self.range, 1 + self.range)
         x = factors * x
         x = torch.clamp(x, 0, 255)
@@ -69,7 +68,7 @@ class EncoderBaseline(nn.Module):
         self.eval()
 
     def _reshape_states(self, drone_states):
-        # 입력: [B, num_stacks*11] 또는 [B, num_stacks, 11]
+        # input: [B, num_stacks*11] or [B, num_stacks, 11]
         if drone_states.dim() == 3 and drone_states.size(1) == self.num_stacks and drone_states.size(2) == self.drone_state_dim:
             return drone_states.view(drone_states.size(0), -1)  # [B, num_stacks*11]
         elif drone_states.dim() == 2 and drone_states.size(1) == self.num_stacks * self.drone_state_dim:
@@ -87,7 +86,7 @@ class EncoderBaseline(nn.Module):
         h = self.convnet(obs)                              # [B, 32, 35, 35]
         h = h.view(h.shape[0], -1)                         # [B, 32*35*35]
         drone_states = self._reshape_states(drone_states)  # [B, num_stacks*11]
-        h = torch.cat((h, drone_states), dim=1)     # [B, repr_dim]
+        h = torch.cat((h, drone_states), dim=1)            # [B, repr_dim]
         return h
 
 
@@ -165,7 +164,7 @@ class StateTokenizerPerFrame(nn.Module):
         return tok
 
 
-# A_time 용 유틸
+# util for A with time
 class ImageGlobalTokenPerFrame(nn.Module):
     """각 프레임을 별도 CNN 처리 → GAP → per-frame global image token"""
     def __init__(self, d_model: int):
@@ -204,7 +203,7 @@ class ImageGlobalTokenPerFrame(nn.Module):
         return tok
 
 
-# 시간 인지 경량 인코더 (글로벌 이미지 토큰)
+# lightweight encoder (time-aware; with global image token)
 class EncoderA_TimeAware(nn.Module):
     """
     (A_time) 경량 시간 인지 인코더:
@@ -299,7 +298,7 @@ class EncoderA_TimeAware(nn.Module):
         return self.drop(z)
 
 
-# B_time 용 유틸
+# util for B: patch and positional encoding
 class PatchEmbed(nn.Module):
     """Conv(kernel=stride=patch)로 패치 임베딩"""
     def __init__(self, img_size=84, patch=12, in_ch=1, d_model=256):
@@ -325,7 +324,7 @@ class PositionalEncoding2D(nn.Module):
         return x + self.pos                # [B, Np, d]
 
 
-# 시간 인지 고표현력 인코더 (패치 기반)
+# encoder B (time-aware; patch-based)
 class EncoderB_TimeAware(nn.Module):
     """
     (B_time) 패치 기반 시간 인지 인코더 (가성비: frame-local → temporal)
@@ -493,10 +492,6 @@ class Critic(nn.Module):
         q2 = self.Q2(h_action)
         return q1, q2
 
-
-# ============================================================================
-# New Actor Architectures (from ANALYSIS_ACTOR_CRITIC_AND_FIXES.md)
-# ============================================================================
 
 class AutoregressiveActorGimbalFirst(nn.Module):
     """
@@ -713,10 +708,6 @@ class MultiHeadAttentionActor(nn.Module):
         return dist
 
 
-# ============================================================================
-# New Critic Architecture
-# ============================================================================
-
 class FactoredCritic(nn.Module):
     """
     Factored critic for autoregressive actors
@@ -797,12 +788,12 @@ class DrQV2Agent:
                  hidden_dim, critic_target_tau, num_expl_steps,
                  update_every_steps, stddev_schedule, stddev_clip, use_tb,
                  frame_stack=3,
+                 state_dim_per_frame: int = 11,
                  enc: str = 'not_received',
                  enc_cfg: dict = None,
                  actor_type: str = 'original',
                  actor_cfg: dict = None,
                  critic_type: str = 'original',
-                 state_dim_per_frame: int = 11,
                  lr_schedule: dict = None):
         self.device = device
         self.critic_target_tau = critic_target_tau
@@ -828,7 +819,6 @@ class DrQV2Agent:
             self.encoder = EncoderBaseline(obs_shape, num_stacks=frame_stack,
                                            drone_state_dim=state_dim_per_frame).to(device)
         elif enc == 'A':
-            # 권장 기본값
             d_model = self.encoder_cfg.get('d_model', 256)
             nhead   = self.encoder_cfg.get('nhead', 4)
             p_drop  = self.encoder_cfg.get('p_drop', 0.05)
