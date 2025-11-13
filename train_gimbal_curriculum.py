@@ -73,10 +73,10 @@ class Workspace:
             print(f"[Curriculum] Enabled. Starting at stage {self.curr_stage}.")
             self._reset_stage_statistics(new_stage=self.curr_stage, bootstrap=(self._c_bootstrap_failures > 0))
 
-        # Best checkpoints metadata file
+        # Best checkpoints metadata file (per-stage structure)
         self.best_meta_path = self.work_dir / "best_checkpoints.json"
         if not self.best_meta_path.exists():
-            self._write_best_meta([])
+            self._write_best_meta({})
 
     def setup(self):
         # create logger
@@ -430,21 +430,42 @@ class Workspace:
             self.curr_enabled = True
             self._apply_curriculum_state(st)
 
-    # Best-8 logic
+    # Per-stage best checkpoints logic
     def _read_best_meta(self):
+        """Read per-stage best checkpoints metadata.
+        Returns dict: {stage_idx: [{"sr": ..., "frame": ..., "path": ...}, ...]}
+        """
         try:
             with self.best_meta_path.open('r') as f:
-                return json.load(f)
+                data = json.load(f)
+                # Handle legacy format (list) by converting to new format
+                if isinstance(data, list):
+                    print("[Checkpoint] Converting legacy best_checkpoints.json format to per-stage format")
+                    return {}
+                return data
         except Exception:
-            return []
+            return {}
 
     def _write_best_meta(self, items):
+        """Write per-stage best checkpoints metadata.
+        items: dict {stage_idx: [{"sr": ..., "frame": ..., "path": ...}, ...]}
+        """
         with self.best_meta_path.open('w') as f:
             json.dump(items, f, indent=2)
 
     def _save_best_checkpoint_if_needed(self, sr_threshold, sr):
+        """Save best checkpoints per curriculum stage.
+        - For non-final stages: keep top 3 models
+        - For final stage: keep top 8 models
+        Models do not compete across stages.
+        """
         if sr < sr_threshold:
             return
+
+        # Determine how many models to keep for this stage
+        is_final_stage = (self.curr_stage >= self._c_max_stage)
+        max_keep = 8 if is_final_stage else 3
+
         # create checkpoint path
         sr_pct = int(round(sr * 100))
         fname = f"snapshot_best_sr{sr_pct}_stage{self.curr_stage}_{self.global_frame}.pt"
@@ -456,28 +477,39 @@ class Workspace:
         with path.open('wb') as f:
             torch.save(payload, f)
 
-        # update leaderboard (keep top-8 by (sr desc, frame desc))
-        items = self._read_best_meta()
-        items.append({"sr": sr, "frame": int(self.global_frame), "path": str(path)})
-        # sort: sr desc, frame desc
-        items.sort(key=lambda x: (x["sr"], x["frame"]), reverse=True)
-        # keep only 8; delete extras on disk
-        extras = items[8:]
-        items = items[:8]
+        # Update per-stage leaderboard
+        all_stages = self._read_best_meta()
+        stage_key = str(self.curr_stage)
+
+        # Get or initialize list for this stage
+        stage_items = all_stages.get(stage_key, [])
+        stage_items.append({"sr": sr, "frame": int(self.global_frame), "path": str(path)})
+
+        # Sort: sr desc, frame desc
+        stage_items.sort(key=lambda x: (x["sr"], x["frame"]), reverse=True)
+
+        # Keep only top N for this stage; delete extras on disk
+        extras = stage_items[max_keep:]
+        stage_items = stage_items[:max_keep]
         for ex in extras:
             try:
                 Path(ex["path"]).unlink(missing_ok=True)
             except Exception:
                 pass
-        self._write_best_meta(items)
-        print(f"[Checkpoint] Saved BEST (sr={sr:.3f}) -> {path.name}. Kept top-8.")
+
+        # Update the stage entry
+        all_stages[stage_key] = stage_items
+        self._write_best_meta(all_stages)
+
+        stage_type = "FINAL" if is_final_stage else f"stage {self.curr_stage}"
+        print(f"[Checkpoint] Saved BEST (sr={sr:.3f}) for {stage_type} -> {path.name}. Kept top-{max_keep} for this stage.")
 
     # Auto resume: does not always resume the best checkpoint
     def auto_resume_if_possible(self):
         """
         Try checkpoints in order:
         1) snapshot.pt
-        2) best_checkpoints.json -> pick the newest (by frame)
+        2) best_checkpoints.json -> pick the newest (by frame) across all stages
         3) latest snapshot_stage*.pt by frame number
         """
         snap = self.work_dir / 'snapshot.pt'
@@ -486,17 +518,23 @@ class Workspace:
             self.load_snapshot(snap)
             return True
 
-        # try best
-        items = self._read_best_meta()
-        if items:
-            # pick newest by frame
-            items_sorted = sorted(items, key=lambda x: x["frame"], reverse=True)
-            for cand in items_sorted:
-                p = Path(cand["path"])
-                if p.exists():
-                    print(f"[Resume] Found BEST checkpoint -> {p}")
-                    self.load_snapshot(p)
-                    return True
+        # try best checkpoints from all stages
+        all_stages = self._read_best_meta()
+        if all_stages:
+            # Collect all checkpoints from all stages
+            all_checkpoints = []
+            for stage_key, stage_items in all_stages.items():
+                all_checkpoints.extend(stage_items)
+
+            if all_checkpoints:
+                # pick newest by frame
+                all_checkpoints.sort(key=lambda x: x["frame"], reverse=True)
+                for cand in all_checkpoints:
+                    p = Path(cand["path"])
+                    if p.exists():
+                        print(f"[Resume] Found BEST checkpoint -> {p}")
+                        self.load_snapshot(p)
+                        return True
 
         # try stage snapshots (pick largest frame in filename)
         candidates = list(self.work_dir.glob("snapshot_stage*_*_*.pt"))
