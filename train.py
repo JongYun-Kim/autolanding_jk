@@ -6,6 +6,8 @@ os.environ['MKL_SERVICE_FORCE_INTEL'] = '1'
 os.environ['MUJOCO_GL'] = 'egl'
 
 from pathlib import Path
+import json
+from collections import deque
 
 import hydra
 import torch
@@ -41,6 +43,14 @@ class Workspace:
         self.timer = utils.Timer()
         self._global_step = 0
         self._global_episode = 0
+
+        # Success rate tracking (window size of 100 episodes)
+        self.success_hist = deque(maxlen=100)
+
+        # Best checkpoints metadata file
+        self.best_meta_path = self.work_dir / "best_checkpoints.json"
+        if not self.best_meta_path.exists():
+            self._write_best_meta([])
 
     def setup(self):
         # create logger
@@ -137,6 +147,9 @@ class Workspace:
                     self.train_video_recorder.save(f'{self.global_frame}.mp4')
                 self._global_episode += 1
 
+                # Record episode result (success/failure)
+                ep_success = bool(getattr(time_step, "landing_info", False))
+                self.success_hist.append(1 if ep_success else 0)
 
                 # wait until all the metrics schema is populated
                 if metrics is not None:
@@ -152,6 +165,10 @@ class Workspace:
                         log('episode', self.global_episode)
                         log('buffer_size', len(self.replay_storage))
                         log('step', self.global_step)
+                        # Log success rate
+                        if len(self.success_hist) > 0:
+                            sr = self._window_success_rate()
+                            log('success_rate_window', sr)
 
                 # Reset env
                 time_step = self.train_env.reset()
@@ -160,6 +177,9 @@ class Workspace:
                 # try to save snapshot
                 if self.cfg.save_snapshot:
                     self.save_snapshot()
+                    # Save top-8 best checkpoints when SR >= 0.8
+                    sr = self._window_success_rate()
+                    self._save_best_checkpoint_if_needed(sr_threshold=0.8, sr=sr)
                 episode_step = 0
                 episode_reward = 0
 
@@ -205,6 +225,65 @@ class Workspace:
             payload = torch.load(f)
         for k, v in payload.items():
             self.__dict__[k] = v
+
+    def _window_success_rate(self):
+        """Calculate success rate from the success history window."""
+        return (sum(self.success_hist) / len(self.success_hist)) if len(self.success_hist) > 0 else 0.0
+
+    def _read_best_meta(self):
+        """Read best checkpoints metadata.
+        Returns list: [{"sr": ..., "frame": ..., "path": ...}, ...]
+        """
+        try:
+            with self.best_meta_path.open('r') as f:
+                return json.load(f)
+        except Exception:
+            return []
+
+    def _write_best_meta(self, items):
+        """Write best checkpoints metadata.
+        items: list [{"sr": ..., "frame": ..., "path": ...}, ...]
+        """
+        with self.best_meta_path.open('w') as f:
+            json.dump(items, f, indent=2)
+
+    def _save_best_checkpoint_if_needed(self, sr_threshold, sr):
+        """Save top-8 best checkpoints based on success rate.
+        Only saves if success rate >= sr_threshold.
+        """
+        if sr < sr_threshold:
+            return
+
+        # Create checkpoint path
+        sr_pct = int(round(sr * 100))
+        fname = f"snapshot_best_sr{sr_pct}_{self.global_frame}.pt"
+        path = self.work_dir / fname
+
+        # Save checkpoint
+        keys_to_save = ['agent', 'timer', '_global_step', '_global_episode']
+        payload = {k: self.__dict__[k] for k in keys_to_save}
+        with path.open('wb') as f:
+            torch.save(payload, f)
+
+        # Update leaderboard
+        items = self._read_best_meta()
+        items.append({"sr": sr, "frame": int(self.global_frame), "path": str(path)})
+
+        # Sort: sr desc, frame desc
+        items.sort(key=lambda x: (x["sr"], x["frame"]), reverse=True)
+
+        # Keep only top 8; delete extras on disk
+        extras = items[8:]
+        items = items[:8]
+        for ex in extras:
+            try:
+                Path(ex["path"]).unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        # Write updated metadata
+        self._write_best_meta(items)
+        print(f"[Checkpoint] Saved BEST (sr={sr:.3f}) -> {path.name}. Kept top-8.")
 
 
 @hydra.main(config_path='cfgs', config_name='config')
