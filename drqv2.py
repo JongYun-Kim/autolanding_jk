@@ -137,7 +137,8 @@ class Critic(nn.Module):
 class DrQV2Agent:
     def __init__(self, obs_shape, action_shape, device, lr, feature_dim,
                  hidden_dim, critic_target_tau, num_expl_steps,
-                 update_every_steps, stddev_schedule, stddev_clip, use_tb, frame_stack=3):
+                 update_every_steps, stddev_schedule, stddev_clip, use_tb, frame_stack=3,
+                 lr_schedule=None):
         self.device = device
         self.critic_target_tau = critic_target_tau
         self.update_every_steps = update_every_steps
@@ -160,6 +161,15 @@ class DrQV2Agent:
         self.encoder_opt = torch.optim.Adam(self.encoder.parameters(), lr=lr)
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=lr)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=lr)
+
+        # Learning rate schedulers
+        from lr_scheduler import create_multi_optimizer_schedulers
+        optimizers = {
+            'encoder': self.encoder_opt,
+            'actor': self.actor_opt,
+            'critic': self.critic_opt
+        }
+        self.lr_schedulers = create_multi_optimizer_schedulers(optimizers, lr_schedule, lr)
 
         # data augmentation
         self.aug = RandomShiftsAug(pad=4)
@@ -255,6 +265,13 @@ class DrQV2Agent:
 
         if step % self.update_every_steps != 0:
             return metrics
+
+        # Update learning rates
+        for name, scheduler in self.lr_schedulers.items():
+            current_lr = scheduler.step(step)
+            if self.use_tb:
+                metrics[f'lr_{name}'] = current_lr
+
         batch = next(replay_iter)
         obs, action, reward, discount, next_obs, drone_state, next_drone_state = utils.to_torch(
             batch, self.device)

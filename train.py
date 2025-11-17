@@ -44,13 +44,17 @@ class Workspace:
         self._global_step = 0
         self._global_episode = 0
 
-        # Success rate tracking (window size of 100 episodes)
-        self.success_hist = deque(maxlen=100)
+        # Success rate tracking (window size of 200 episodes)
+        self.success_hist = deque(maxlen=200)
 
         # Best checkpoints metadata file
         self.best_meta_path = self.work_dir / "best_checkpoints.json"
         if not self.best_meta_path.exists():
             self._write_best_meta([])
+
+        # Checkpoint save frequency counter (save every 8 episodes when eligible)
+        self._episodes_since_last_checkpoint_attempt = 0
+        self._checkpoint_save_frequency = 8
 
     def setup(self):
         # create logger
@@ -177,9 +181,12 @@ class Workspace:
                 # try to save snapshot
                 if self.cfg.save_snapshot:
                     self.save_snapshot()
-                    # Save top-8 best checkpoints when SR >= 0.8
-                    sr = self._window_success_rate()
-                    self._save_best_checkpoint_if_needed(sr_threshold=0.8, sr=sr)
+                    # Save top-16 best checkpoints when SR >= 0.8 (every 8 episodes)
+                    self._episodes_since_last_checkpoint_attempt += 1
+                    if self._episodes_since_last_checkpoint_attempt >= self._checkpoint_save_frequency:
+                        sr = self._window_success_rate()
+                        self._save_best_checkpoint_if_needed(sr_threshold=0.8, sr=sr)
+                        self._episodes_since_last_checkpoint_attempt = 0
                 episode_step = 0
                 episode_reward = 0
 
@@ -248,7 +255,7 @@ class Workspace:
             json.dump(items, f, indent=2)
 
     def _save_best_checkpoint_if_needed(self, sr_threshold, sr):
-        """Save top-8 best checkpoints based on success rate.
+        """Save top-16 best checkpoints based on success rate.
         Only saves if success rate >= sr_threshold.
         """
         if sr < sr_threshold:
@@ -272,9 +279,9 @@ class Workspace:
         # Sort: sr desc, frame desc
         items.sort(key=lambda x: (x["sr"], x["frame"]), reverse=True)
 
-        # Keep only top 8; delete extras on disk
-        extras = items[8:]
-        items = items[:8]
+        # Keep only top 16; delete extras on disk
+        extras = items[16:]
+        items = items[:16]
         for ex in extras:
             try:
                 Path(ex["path"]).unlink(missing_ok=True)
@@ -283,7 +290,7 @@ class Workspace:
 
         # Write updated metadata
         self._write_best_meta(items)
-        print(f"[Checkpoint] Saved BEST (sr={sr:.3f}) -> {path.name}. Kept top-8.")
+        print(f"[Checkpoint] Saved BEST (sr={sr:.3f}) -> {path.name}. Kept top-16.")
 
 
 @hydra.main(config_path='cfgs', config_name='config')
