@@ -27,10 +27,10 @@ import dmc
 # ============================================================================
 
 # Model 1: Drone-only model (3D actions) from train.py
-MODEL_3D_PATH = "/path/to/your/drone_only_model/snapshot.pt"  # UPDATE THIS
+MODEL_3D_PATH = "/home/user/landing/trained_models/drqv2-base-v0/snapshot.pt"
 
 # Model 2: Drone+Gimbal model (5D actions) from train_gimbal_curriculum.py
-MODEL_5D_PATH = "/path/to/your/gimbal_model/snapshot.pt"  # UPDATE THIS
+MODEL_5D_PATH = "/home/user/landing/trained_models/gimbal-curr-v0/best_4675k.pt"
 
 # Evaluation settings
 NUM_EPISODES = 100
