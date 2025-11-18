@@ -18,11 +18,8 @@ import random
 import numpy as np
 import torch
 from pathlib import Path
-from collections import deque
 
-from gym_pybullet_drones.envs.single_agent_rl.LandingAviary import LandingGimbalAviary
-from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics
-from gym_pybullet_drones.envs.single_agent_rl.BaseSingleAgentAviary import ActionType, ObservationType
+import dmc
 
 
 # ============================================================================
@@ -41,63 +38,11 @@ FRAME_STACK = 3
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 EPISODE_LEN_SEC = 18
 
+# Environment name (registered gym environment)
+ENV_NAME_3D = "landing-aviary-v0"  # For drone-only model
+ENV_NAME_5D = "landing-aviary-v0-gimbal"  # For gimbal model
+
 # ============================================================================
-
-
-class FrameStack:
-    """Stack frames for observation."""
-    def __init__(self, num_stack):
-        self.num_stack = num_stack
-        self._frames = deque([], maxlen=num_stack)
-
-    def reset(self, obs):
-        for _ in range(self.num_stack):
-            self._frames.append(obs)
-        return self._get_obs()
-
-    def step(self, obs):
-        self._frames.append(obs)
-        return self._get_obs()
-
-    def _get_obs(self):
-        return np.concatenate(list(self._frames), axis=0)
-
-
-class DroneStateStack:
-    """Stack drone states."""
-    def __init__(self, num_stack, state_dim=11):
-        self.num_stack = num_stack
-        self.state_dim = state_dim
-        self._states = deque([], maxlen=num_stack)
-
-    def reset(self, state):
-        for _ in range(self.num_stack):
-            self._states.append(state)
-        return self._get_state()
-
-    def step(self, state):
-        self._states.append(state)
-        return self._get_state()
-
-    def _get_state(self):
-        return np.stack(list(self._states), axis=0)
-
-
-def get_drone_state(env):
-    """Extract drone state vector for the agent."""
-    drone_state = env._getDroneStateVector(0)
-    # velocity (3) + drone quaternion (4) + gimbal quaternion (4) = 11
-    velocity = drone_state[10:13]
-    drone_quat = drone_state[3:7]
-
-    # Get gimbal quaternion
-    if hasattr(env, 'gimbal_state_quat') and env.gimbal_state_quat is not None:
-        gimbal_quat = env.gimbal_state_quat
-    else:
-        gimbal_quat = np.array([0, 0, 0, 1], dtype=np.float32)
-
-    state = np.concatenate([velocity, drone_quat, gimbal_quat]).astype(np.float32)
-    return state
 
 
 def set_all_seeds(seed):
@@ -130,27 +75,31 @@ def load_model(checkpoint_path, device):
     return agent
 
 
-def run_episode(env, agent, frame_stack, state_stack, is_5d_action, episode_seed):
+def run_episode(env, agent, is_5d_action, episode_seed):
     """Run a single episode and return results."""
     # Set seed before reset to ensure identical initialization
     set_all_seeds(episode_seed)
 
-    obs = env.reset()
-    obs_stacked = frame_stack.reset(obs)
-    drone_state = get_drone_state(env)
-    state_stacked = state_stack.reset(drone_state)
+    time_step = env.reset()
 
     total_reward = 0
     step_count = 0
-    done = False
 
-    while not done:
+    while not time_step.last():
+        # Get observation and drone state from time_step
+        obs = time_step.observation
+        drone_state = time_step.drone_state
+
+        # Ensure proper types (float32)
+        obs = np.asarray(obs, dtype=np.float32)
+        drone_state = np.asarray(drone_state, dtype=np.float32)
+
         # Get action from agent
         with torch.no_grad():
             action = agent.act(
-                obs_stacked,
+                obs,
                 step=1000000,  # Use high step to get deterministic action
-                drone_states=state_stacked,
+                drone_states=drone_state,
                 eval_mode=True
             )
 
@@ -163,43 +112,49 @@ def run_episode(env, agent, frame_stack, state_stack, is_5d_action, episode_seed
             env_action = np.concatenate([action, np.array([0.0, 0.0], dtype=np.float32)])
 
         # Step environment
-        obs, reward, done, info = env.step(env_action)
+        time_step = env.step(env_action)
 
-        # Update stacks
-        obs_stacked = frame_stack.step(obs)
-        drone_state = get_drone_state(env)
-        state_stacked = state_stack.step(drone_state)
-
-        total_reward += reward
+        total_reward += time_step.reward
         step_count += 1
 
     # Check if landing was successful
-    success = info.get("landing", False)
+    success = time_step.landing_info
+    position_error = time_step.position_error
 
     return {
         "success": success,
         "total_reward": total_reward,
         "steps": step_count,
-        "x_error": info.get("x error", float('inf')),
-        "y_error": info.get("y error", float('inf')),
+        "x_error": position_error[0] if position_error else float('inf'),
+        "y_error": position_error[1] if position_error else float('inf'),
     }
 
 
-def evaluate_model(model_path, env, is_5d_action, num_episodes, base_seed=42):
+def evaluate_model(model_path, env_name, is_5d_action, num_episodes, base_seed=42):
     """Evaluate a model over multiple episodes."""
     print(f"\nLoading model from: {model_path}")
     agent = load_model(model_path, DEVICE)
-
-    frame_stack = FrameStack(FRAME_STACK)
-    state_stack = DroneStateStack(FRAME_STACK)
 
     results = []
     successes = 0
 
     for ep in range(num_episodes):
         episode_seed = base_seed + ep
-        result = run_episode(env, agent, frame_stack, state_stack, is_5d_action, episode_seed)
+
+        # Set seed before creating environment
+        set_all_seeds(episode_seed)
+
+        # Create environment with proper wrapper for this model type
+        if is_5d_action:
+            env = dmc.make_with_gimbal(env_name, FRAME_STACK, 1, episode_seed)
+        else:
+            env = dmc.make(env_name, FRAME_STACK, 1, episode_seed)
+
+        result = run_episode(env, agent, is_5d_action, episode_seed)
         results.append(result)
+
+        # Close env after each episode
+        env.close()
 
         if result["success"]:
             successes += 1
@@ -235,25 +190,6 @@ def evaluate_model(model_path, env, is_5d_action, num_episodes, base_seed=42):
     }
 
 
-def create_eval_environment():
-    """Create the evaluation environment."""
-    env = LandingGimbalAviary(
-        drone_model=DroneModel.CF2X,
-        initial_xyzs=None,
-        initial_rpys=None,
-        physics=Physics.PYB_GND_DRAG_DW,
-        freq=240,
-        aggregate_phy_steps=10,
-        gui=False,
-        record=False,
-        obs=ObservationType.RGB,
-        act=ActionType.VEL,
-        episode_len_sec=EPISODE_LEN_SEC,
-        gv_path_type="straight",
-    )
-    return env
-
-
 def main():
     print("=" * 60)
     print("Model Comparison Evaluation")
@@ -264,10 +200,6 @@ def main():
     print(f"Episode length: {EPISODE_LEN_SEC}s")
     print("=" * 60)
 
-    # Create environment
-    print("\nCreating evaluation environment...")
-    env = create_eval_environment()
-
     # Base seed for reproducibility
     base_seed = 42
 
@@ -277,7 +209,7 @@ def main():
     print("=" * 60)
     results_3d = evaluate_model(
         MODEL_3D_PATH,
-        env,
+        ENV_NAME_3D,
         is_5d_action=False,
         num_episodes=NUM_EPISODES,
         base_seed=base_seed
@@ -289,7 +221,7 @@ def main():
     print("=" * 60)
     results_5d = evaluate_model(
         MODEL_5D_PATH,
-        env,
+        ENV_NAME_5D,
         is_5d_action=True,
         num_episodes=NUM_EPISODES,
         base_seed=base_seed
@@ -341,9 +273,6 @@ def main():
     print(f"Only 3D succeeded: {only_3d_success} episodes")
     print(f"Only 5D succeeded: {only_5d_success} episodes")
     print(f"Both failed: {both_fail} episodes")
-
-    # Close environment
-    env.close()
 
     print("\n" + "=" * 60)
     print("Evaluation complete!")
