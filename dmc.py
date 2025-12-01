@@ -35,6 +35,7 @@ class ExtendedTimeStep(NamedTuple):
     landing_info: Any
     drone_state: Any
     position_error: Any
+    oracle_gimbal: Any = None  # Optional: oracle gimbal angles for auxiliary task
 
     def first(self):
         return self.step_type == StepType.FIRST
@@ -106,6 +107,11 @@ class FrameStackWrapper(gym.Wrapper):
 
     def discount_spec(self):
         return Array((1,), np.float32, 'discount')
+
+    def oracle_gimbal_spec(self):
+        # Oracle gimbal: [pitch, yaw] in normalized space [-1, 1]
+        # Returns None if not available (for backward compatibility)
+        return Array((2,), np.float32, 'oracle_gimbal')
 
     def _transform_observation(self, time_step):
         assert len(self._frames) == self._num_frames
@@ -234,14 +240,17 @@ class ExtendedTimeStepWrapper(gym.Wrapper):
             discount = 1.0
             landing_info = False#time_step[3]["landing"]
             position_error = [0.0, 0.0]
+            oracle_gimbal = None  # No oracle for first step
         elif time_step[3]["episode end flag"] == True:
             discount = 0.0
             landing_info = time_step[3]["landing"]
             position_error = [time_step[3]['x error'], time_step[3]['y error']]
+            oracle_gimbal = time_step[3].get('oracle_gimbal', None)
         else:
             discount = 1.0
             landing_info = time_step[3]["landing"]
             position_error = [time_step[3]['x error'], time_step[3]['y error']]
+            oracle_gimbal = time_step[3].get('oracle_gimbal', None)
 
         if action is None:
             action_spec = self.action_spec()
@@ -258,7 +267,8 @@ class ExtendedTimeStepWrapper(gym.Wrapper):
                                 discount=discount,
                                 landing_info = landing_info,
                                 drone_state = time_step[-1],
-                                position_error = position_error)#time_step.discount or 1.0)
+                                position_error = position_error,
+                                oracle_gimbal = oracle_gimbal)#time_step.discount or 1.0)
 
 
 class MultiRewardExtendedTimeStepWrapper(gym.Wrapper):
@@ -282,14 +292,17 @@ class MultiRewardExtendedTimeStepWrapper(gym.Wrapper):
             discount = 1.0
             landing_info = False
             position_error = [0.0, 0.0]
+            oracle_gimbal = None  # No oracle for first step
         elif time_step[3]["episode end flag"] == True:
             discount = 0.0
             landing_info = time_step[3]["landing"]
             position_error = [time_step[3]['x error'], time_step[3]['y error']]
+            oracle_gimbal = time_step[3].get('oracle_gimbal', None)
         else:
             discount = 1.0
             landing_info = time_step[3]["landing"]
             position_error = [time_step[3]['x error'], time_step[3]['y error']]
+            oracle_gimbal = time_step[3].get('oracle_gimbal', None)
 
         if action is None:
             action_spec = self.action_spec()
@@ -306,7 +319,8 @@ class MultiRewardExtendedTimeStepWrapper(gym.Wrapper):
                                 discount=discount,
                                 landing_info = landing_info,
                                 drone_state = time_step[-1],
-                                position_error = position_error)
+                                position_error = position_error,
+                                oracle_gimbal = oracle_gimbal)
 
 
 def make(name, frame_stack, action_repeat, seed):

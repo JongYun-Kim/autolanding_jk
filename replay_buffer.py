@@ -150,11 +150,17 @@ class ReplayBuffer(IterableDataset):
         discount = np.ones_like(episode['discount'][idx])
         drone_state = episode['drone_state'][idx - 1]
         next_drone_state = episode['drone_state'][idx + self._nstep - 1]
+
+        # Oracle gimbal (may be None for backward compatibility)
+        oracle_gimbal = None
+        if 'oracle_gimbal' in episode:
+            oracle_gimbal = episode['oracle_gimbal'][idx - 1]
+
         for i in range(self._nstep):
             step_reward = episode['reward'][idx + i]
             reward += discount * step_reward
             discount *= episode['discount'][idx + i] * self._discount
-        return (obs, action, reward, discount, next_obs, drone_state, next_drone_state)
+        return (obs, action, reward, discount, next_obs, drone_state, next_drone_state, oracle_gimbal)
 
     def __iter__(self):
         while True:
