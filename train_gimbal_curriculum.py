@@ -111,10 +111,22 @@ class Workspace:
         self.train_video_recorder = VideoRecorder(self.work_dir if self.cfg.save_train_video else None)
 
     def _build_env_kwargs_from_cfg(self, cfg):
-        # 커리큘럼 비사용: 빈 kwargs
+        # Build environment kwargs with gimbal control parameters
+        env_kwargs = {}
+
+        # Add gimbal control parameters if they exist in config
+        if hasattr(self.cfg, "gimbal_control_mode"):
+            env_kwargs["gimbal_control_mode"] = str(self.cfg.gimbal_control_mode)
+        if hasattr(self.cfg, "gimbal_max_velocity"):
+            env_kwargs["gimbal_max_velocity"] = float(self.cfg.gimbal_max_velocity)
+        if hasattr(self.cfg, "gimbal_max_acceleration"):
+            env_kwargs["gimbal_max_acceleration"] = float(self.cfg.gimbal_max_acceleration)
+
+        # 커리큘럼 비사용: return with gimbal params only
         preset = cfg
         if not (hasattr(preset, "curriculum") and preset.curriculum.enable):
-            return {}
+            return env_kwargs
+
         # Hydra YAML -> dataclass 리스트
         stages = []
         for s in preset.curriculum.stages:
@@ -130,7 +142,8 @@ class Workspace:
                 yaw_only=bool(getattr(s, "yaw_only", False)),
                 pitch_only=bool(getattr(s, "pitch_only", False)),
             ))
-        return {"use_curriculum": True, "curriculum_cfg": stages}
+        env_kwargs.update({"use_curriculum": True, "curriculum_cfg": stages})
+        return env_kwargs
 
     @property
     def global_step(self):

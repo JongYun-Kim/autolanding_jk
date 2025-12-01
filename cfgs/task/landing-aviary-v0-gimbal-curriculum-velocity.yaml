@@ -1,0 +1,13 @@
+defaults:
+  - _self_
+
+task_name: gimbal-curriculum-landing-aviary-v0
+num_train_frames: 6000000
+stddev_schedule: 'linear(0.42, 0.01, 5000000)'
+
+# Gimbal dynamics configuration - Velocity control mode
+# In this mode, the action specifies desired gimbal angular velocity (not position)
+# The gimbal moves at the commanded velocity with maximum velocity limits
+gimbal_control_mode: "velocity"
+gimbal_max_velocity: 3.0  # rad/s - maximum angular velocity for gimbal movement
+gimbal_max_acceleration: 10.0  # Not used in velocity mode, only for acceleration mode

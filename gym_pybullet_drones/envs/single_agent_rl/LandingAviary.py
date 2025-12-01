@@ -319,7 +319,10 @@ class LandingGimbalAviary(LandingAviary):
                  episode_len_sec: int=18,
                  gv_path_type: str="straight",
                  gv_sinusoidal_amplitude: float=2.0,
-                 gv_sinusoidal_frequency: float=0.5
+                 gv_sinusoidal_frequency: float=0.5,
+                 gimbal_control_mode: str="position",  # "position", "velocity", or "acceleration"
+                 gimbal_max_velocity: float=3.0,  # rad/s, for velocity and acceleration modes
+                 gimbal_max_acceleration: float=10.0,  # rad/s^2, for acceleration mode only
                  ):
 
         self._cam_dir_local = np.array([0.0, 0.0, -1.0], dtype=np.float64)  # camera forward (-z)
@@ -336,10 +339,22 @@ class LandingGimbalAviary(LandingAviary):
         self._far = 100.0
         self._aspect = 1.0
 
+        # Gimbal control mode configuration
+        if gimbal_control_mode not in ["position", "velocity", "acceleration"]:
+            raise ValueError(f"gimbal_control_mode must be 'position', 'velocity', or 'acceleration', got {gimbal_control_mode}")
+        self.gimbal_control_mode = gimbal_control_mode
+        self.gimbal_max_velocity = gimbal_max_velocity  # rad/s
+        self.gimbal_max_acceleration = gimbal_max_acceleration  # rad/s^2
+
         # Angles: [pitch,  roll,  yaw]
         # gimbal_target: target gimbal angles in normalized [-1, 1] range
         self.gimbal_target = None  # action[3:]
         self.initial_gimbal_target = np.array([0.0, 0, 0.0])  # camera pointing down, no roll, no yaw
+
+        # Gimbal dynamics state (in normalized space [-1, 1])
+        # These track the actual gimbal state after applying dynamics
+        self.gimbal_current_angles = None  # Current actual angles (normalized)
+        self.gimbal_current_velocity = None  # Current velocity (normalized/step) for acceleration mode
 
         # Gimbal specs
         eps = 1e-6
@@ -455,19 +470,19 @@ class LandingGimbalAviary(LandingAviary):
 
     def _getDroneImages(self, nth_drone, segmentation: bool = True):
         """
-        - self.gimbal_target([-1,1]^3) -> (pitch,roll,yaw)[rad] -> R_local = Rz@Ry
+        - self.gimbal_current_angles([-1,1]^3) -> (pitch,roll,yaw)[rad] -> R_local = Rz@Ry
         - world forward/up를 만든 후 PyBullet view/projection으로 렌더
         - self.gimbal_state_quat은 실제 사용한 R_local로부터 생성(정합 보장)
         """
-        if self.gimbal_target is None:
-            raise ValueError("gimbal_target is not set. Call reset() or step() first.")
+        if self.gimbal_current_angles is None:
+            raise ValueError("gimbal_current_angles is not set. Call reset() or step() first.")
         if self.IMG_RES is None:
             print(f"[ERROR] in {self.__class__.__name__}.{inspect.currentframe().f_code.co_name}(), "
                   f"remember to set self.IMG_RES to np.array([width, height])")
             exit()
 
-        # 1) 정규화 -> 라디안
-        pitch_rad, roll_rad, yaw_rad = self._norm_to_rad(self.gimbal_target)
+        # 1) 정규화 -> 라디안 (use current angles, not target)
+        pitch_rad, roll_rad, yaw_rad = self._norm_to_rad(self.gimbal_current_angles)
 
         # 2) 드론 자세
         drone_pos = np.array(p.getBasePositionAndOrientation(self.DRONE_IDS[0], physicsClientId=self.CLIENT)[0])
@@ -652,8 +667,8 @@ class LandingGimbalAviary(LandingAviary):
         # Drone rotation
         rot_drone = np.array(p.getMatrixFromQuaternion(drone_quaternion)).reshape(3, 3).astype(np.float64)
 
-        # Camera
-        pitch_rad, _, yaw_rad = self._norm_to_rad(self.gimbal_target)
+        # Camera (use current angles, not target)
+        pitch_rad, _, yaw_rad = self._norm_to_rad(self.gimbal_current_angles)
         R_local = self._gimbal_rot_from_angles(pitch_rad, 0.0, yaw_rad)
         cam_pos_world = drone_position + rot_drone @ self._cam_offset_local
         cam_fwd_world = rot_drone @ (R_local @ self._cam_dir_local)
@@ -669,8 +684,83 @@ class LandingGimbalAviary(LandingAviary):
         )
         return visibility
 
+    def _update_gimbal_dynamics(self, target_angles_norm, dt):
+        """
+        Update gimbal angles based on control mode and dynamics constraints.
+
+        Args:
+            target_angles_norm: Target gimbal angles in normalized space [-1, 1] (pitch, roll, yaw)
+            dt: Time step in seconds
+
+        Returns:
+            Updated current angles in normalized space [-1, 1]
+        """
+        if self.gimbal_control_mode == "position":
+            # Instant control - directly set to target (backward compatible)
+            self.gimbal_current_angles = target_angles_norm.copy()
+
+        elif self.gimbal_control_mode == "velocity":
+            # Velocity control: action specifies velocity, not position
+            # Convert normalized velocity command to rad/s
+            # Action range [-1, 1] maps to [-max_vel, +max_vel] in rad/s
+            lo = self.gimbal_angle_ranges[:, 0]
+            hi = self.gimbal_angle_ranges[:, 1]
+            range_width_rad = hi - lo
+
+            # Normalized velocity to rad/s
+            # max_norm_velocity is how much we can change in normalized space per second
+            max_norm_velocity = self.gimbal_max_velocity / (range_width_rad / 2.0)  # per second
+            max_norm_velocity = np.clip(max_norm_velocity, 0.0, 100.0)  # sanity check
+
+            # Velocity command in normalized space per second
+            velocity_cmd = target_angles_norm * max_norm_velocity  # element-wise
+
+            # Integrate: angle += velocity * dt
+            delta = velocity_cmd * dt
+            self.gimbal_current_angles = np.clip(
+                self.gimbal_current_angles + delta,
+                -1.0, 1.0
+            )
+
+        elif self.gimbal_control_mode == "acceleration":
+            # Acceleration control: action specifies acceleration
+            # Convert normalized acceleration command to rad/s^2
+            lo = self.gimbal_angle_ranges[:, 0]
+            hi = self.gimbal_angle_ranges[:, 1]
+            range_width_rad = hi - lo
+
+            # Normalized acceleration to rad/s^2
+            max_norm_acceleration = self.gimbal_max_acceleration / (range_width_rad / 2.0)  # per second^2
+            max_norm_acceleration = np.clip(max_norm_acceleration, 0.0, 1000.0)  # sanity check
+
+            # Acceleration command in normalized space per second^2
+            accel_cmd = target_angles_norm * max_norm_acceleration  # element-wise
+
+            # Integrate velocity: velocity += acceleration * dt
+            self.gimbal_current_velocity = self.gimbal_current_velocity + accel_cmd * dt
+
+            # Limit velocity
+            max_norm_velocity = self.gimbal_max_velocity / (range_width_rad / 2.0)  # per second
+            max_norm_velocity = np.clip(max_norm_velocity, 0.0, 100.0)
+            self.gimbal_current_velocity = np.clip(
+                self.gimbal_current_velocity,
+                -max_norm_velocity, max_norm_velocity
+            )
+
+            # Integrate position: angle += velocity * dt
+            delta = self.gimbal_current_velocity * dt
+            self.gimbal_current_angles = np.clip(
+                self.gimbal_current_angles + delta,
+                -1.0, 1.0
+            )
+
+        return self.gimbal_current_angles
+
     def reset(self):
-        self.gimbal_target = self.initial_gimbal_target
+        self.gimbal_target = self.initial_gimbal_target.copy()
+        # Initialize dynamics state
+        self.gimbal_current_angles = self.initial_gimbal_target.copy()
+        self.gimbal_current_velocity = np.array([0.0, 0.0, 0.0], dtype=np.float32)
         return super().reset()
 
     def step(self, action):
@@ -678,6 +768,12 @@ class LandingGimbalAviary(LandingAviary):
         self.gimbal_target = np.array([action[3], 0.0, action[4]], dtype=np.float32)
         if not np.all(np.abs(self.gimbal_target) <= 1.0 + 1e-9):
             raise ValueError(f"Gimbal target angles must be in [-1, 1], got {self.gimbal_target}")
+
+        # Update gimbal dynamics based on control mode
+        # Calculate dt: this is per physics step
+        dt = 1.0 / self.SIM_FREQ
+        self._update_gimbal_dynamics(self.gimbal_target, dt)
+
         vel_cmd = action[0:3]
         return super().step(vel_cmd)
 
@@ -722,8 +818,8 @@ class LandingGimbalAviary(LandingAviary):
             f_oracle = R_oracle @ self._cam_dir_local
             f_oracle /= (np.linalg.norm(f_oracle) + 1e-12)
 
-            # Get gimbal forward (현재 타겟에서 직접 계산)
-            f_curr = self._forward_from_norm_angles(self.gimbal_target)
+            # Get gimbal forward (use current angles, not target)
+            f_curr = self._forward_from_norm_angles(self.gimbal_current_angles)
 
             # Compute cosine alignment
             cos_align = float(np.clip(np.dot(f_curr, f_oracle), -1.0, 1.0))
@@ -793,7 +889,11 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
                  episode_len_sec: int = 18,
                  gv_path_type: str="straight",
                  gv_sinusoidal_amplitude: float=2.0,
-                 gv_sinusoidal_frequency: float=0.5
+                 gv_sinusoidal_frequency: float=0.5,
+                 # Gimbal dynamics parameters
+                 gimbal_control_mode: str="position",
+                 gimbal_max_velocity: float=3.0,
+                 gimbal_max_acceleration: float=10.0,
                  ):
         super().__init__(drone_model=drone_model,
                          initial_xyzs=initial_xyzs,
@@ -808,7 +908,10 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
                          episode_len_sec=episode_len_sec,
                          gv_path_type=gv_path_type,
                          gv_sinusoidal_amplitude=gv_sinusoidal_amplitude,
-                         gv_sinusoidal_frequency=gv_sinusoidal_frequency)
+                         gv_sinusoidal_frequency=gv_sinusoidal_frequency,
+                         gimbal_control_mode=gimbal_control_mode,
+                         gimbal_max_velocity=gimbal_max_velocity,
+                         gimbal_max_acceleration=gimbal_max_acceleration)
 
         # 커리큘럼 상태
         self.use_curriculum = use_curriculum
@@ -1005,7 +1108,8 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
             f_oracle = R_oracle @ self._cam_dir_local
             f_oracle /= (np.linalg.norm(f_oracle) + 1e-12)
 
-            f_curr = self._forward_from_norm_angles(self.gimbal_target)
+            # Use current angles, not target
+            f_curr = self._forward_from_norm_angles(self.gimbal_current_angles)
             cos_align = float(np.clip(np.dot(f_curr, f_oracle), -1.0, 1.0))
             cos_sharp = cos_align ** 5  # 날카롭게
             return float(self._stage.viz_weight) * cos_sharp
