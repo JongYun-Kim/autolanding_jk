@@ -156,6 +156,10 @@ class ReplayBuffer(IterableDataset):
         if 'oracle_gimbal' in episode:
             oracle_gimbal = episode['oracle_gimbal'][idx - 1]
 
+        # Ensure oracle_gimbal is always a valid array (zeros if not available)
+        if oracle_gimbal is None:
+            oracle_gimbal = np.zeros((2,), dtype=np.float32)
+
         for i in range(self._nstep):
             step_reward = episode['reward'][idx + i]
             reward += discount * step_reward
