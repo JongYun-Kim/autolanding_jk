@@ -100,6 +100,17 @@ class BaseSingleAgentAviary(BaseAviary):
                     self.TUNED_P_ATT = np.array([70000., 70000., 60000.])
                     self.TUNED_I_ATT = np.array([.0, .0, 500.])
                     self.TUNED_D_ATT = np.array([20000., 20000., 12000.])
+            elif drone_model == DroneModel.MAVIC3:
+                # MAVIC3 uses DSLPIDControl with same base gains as CF2X (X configuration)
+                self.ctrl = DSLPIDControl(drone_model=DroneModel.MAVIC3)
+                if act == ActionType.TUN:
+                    # Starting point for MAVIC3 tuning (same as CF2X)
+                    self.TUNED_P_POS = np.array([.4, .4, 1.25])
+                    self.TUNED_I_POS = np.array([.05, .05, .05])
+                    self.TUNED_D_POS = np.array([.2, .2, .5])
+                    self.TUNED_P_ATT = np.array([70000., 70000., 60000.])
+                    self.TUNED_I_ATT = np.array([.0, .0, 500.])
+                    self.TUNED_D_ATT = np.array([20000., 20000., 12000.])
             elif drone_model == DroneModel.HB:
                 self.ctrl = SimplePIDControl(drone_model=DroneModel.HB)
                 if act == ActionType.TUN:
