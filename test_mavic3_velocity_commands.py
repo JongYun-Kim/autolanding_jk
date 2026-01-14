@@ -331,40 +331,88 @@ def interactive_action_selection():
         print("Invalid choice. Please enter 1-3.")
 
     # Repeat selection
-    print("\nRepeat action until end of episode?")
-    print("  1. Yes - repeat same action")
-    print("  2. No - apply once then hover")
+    print("\nAction mode:")
+    print("  1. Repeat - repeat same action until end of episode")
+    print("  2. Step-by-step - select new action at each step (interactive)")
 
     while True:
         choice = input("\nEnter choice (1-2): ").strip()
         if choice == '1':
-            repeat = True
+            repeat = 'repeat'
             break
         elif choice == '2':
-            repeat = False
+            repeat = 'step'
             break
         print("Invalid choice. Please enter 1 or 2.")
 
     return direction, magnitude, repeat
 
 
+def quick_action_selection():
+    """Quick single-key action selection during episode.
+
+    Returns (direction, magnitude) tuple, or None to keep current action.
+    """
+    print("\n[Quick Action] Press key + Enter:")
+    print("  w/s: +Z/-Z (up/down)    a/d: -X/+X (left/right)")
+    print("  q/e: +Y/-Y (fwd/back)   0/1/5: magnitude 0.0/0.1/0.5")
+    print("  h: hover    k: keep current    x: exit episode")
+
+    choice = input("> ").strip().lower()
+
+    if choice == 'x':
+        return 'exit', 0.0
+    elif choice == 'k' or choice == '':
+        return None, None  # Keep current
+    elif choice == 'h':
+        return 'hover', 0.0
+    elif choice == 'w':
+        return 'z', None  # Keep current magnitude
+    elif choice == 's':
+        return '-z', None
+    elif choice == 'a':
+        return '-x', None
+    elif choice == 'd':
+        return 'x', None
+    elif choice == 'q':
+        return 'y', None
+    elif choice == 'e':
+        return '-y', None
+    elif choice == '0':
+        return None, 0.0
+    elif choice == '1':
+        return None, 0.1
+    elif choice == '5':
+        return None, 0.5
+    else:
+        print(f"Unknown key: {choice}")
+        return None, None
+
+
 def run_velocity_test(
     drone_model: DroneModel = DroneModel.MAVIC3,
     direction: str = 'z',
     magnitude: float = 0.1,
-    repeat: bool = True,
+    mode: str = 'repeat',  # 'repeat' or 'step'
     duration_sec: float = 10.0,
     gui: bool = False,
     output_dir: str = ".",
 ):
-    """Run velocity command test and record videos."""
+    """Run velocity command test and record videos.
+
+    Parameters
+    ----------
+    mode : str
+        'repeat' - repeat same action until end
+        'step' - interactive action selection each step
+    """
 
     print(f"\n{'='*60}")
     print(f"Velocity Command Test - {drone_model.name}")
     print(f"{'='*60}")
-    print(f"Direction: {direction}")
-    print(f"Magnitude: {magnitude}")
-    print(f"Repeat: {repeat}")
+    print(f"Initial Direction: {direction}")
+    print(f"Initial Magnitude: {magnitude}")
+    print(f"Mode: {mode}")
     print(f"Duration: {duration_sec}s")
 
     # Create environment
@@ -386,8 +434,9 @@ def run_velocity_test(
     obs_size = (256, 256)  # Upscaled for visibility
 
     model_name = drone_model.name.lower()
-    world_path = os.path.join(output_dir, f"velocity_test_world_{model_name}_{direction}_{magnitude}.mp4")
-    obs_path = os.path.join(output_dir, f"velocity_test_obs_{model_name}_{direction}_{magnitude}.mp4")
+    mode_suffix = "interactive" if mode == 'step' else f"{direction}_{magnitude}"
+    world_path = os.path.join(output_dir, f"velocity_test_world_{model_name}_{mode_suffix}.mp4")
+    obs_path = os.path.join(output_dir, f"velocity_test_obs_{model_name}_{mode_suffix}.mp4")
 
     world_writer = create_video_writer(world_path, world_fps, world_size[0], world_size[1])
     obs_writer = create_video_writer(obs_path, obs_fps, obs_size[0], obs_size[1])
@@ -400,21 +449,40 @@ def run_velocity_test(
     env_step_time = env.AGGR_PHY_STEPS / env.SIM_FREQ
     total_steps = int(duration_sec / env_step_time)
     frame_interval = max(1, int(1.0 / (world_fps * env_step_time)))
-    action_apply_steps = min(50, total_steps // 2)  # Apply action for first 50 steps or half
 
     print(f"\nSimulation: {total_steps} steps")
 
+    if mode == 'step':
+        print("\n[INTERACTIVE MODE] You will select action at each step.")
+        print("Press Enter after each key. Press 'x' to exit early.\n")
+
     obs = env.reset()
-    action = get_action_from_direction(direction, magnitude)
-    hover_action = np.zeros(3)
+
+    # Current action state
+    current_direction = direction
+    current_magnitude = magnitude
+    current_action = get_action_from_direction(current_direction, current_magnitude)
 
     frame_count = 0
     for step in range(total_steps):
-        # Determine current action
-        if repeat:
-            current_action = action
-        else:
-            current_action = action if step < action_apply_steps else hover_action
+        # In step mode, prompt for new action
+        if mode == 'step':
+            new_dir, new_mag = quick_action_selection()
+
+            if new_dir == 'exit':
+                print("Exiting episode early...")
+                break
+
+            # Update direction if provided
+            if new_dir is not None:
+                current_direction = new_dir
+
+            # Update magnitude if provided
+            if new_mag is not None:
+                current_magnitude = new_mag
+
+            current_action = get_action_from_direction(current_direction, current_magnitude)
+            print(f"  -> Action: {current_direction} @ {current_magnitude} = {current_action}")
 
         obs, reward, done, info = env.step(current_action)
 
@@ -459,7 +527,7 @@ def run_velocity_test(
             obs_writer.write(obs_bgr)
             frame_count += 1
 
-        if step % (total_steps // 10) == 0:
+        if mode == 'repeat' and step % (total_steps // 10) == 0:
             print(f"  Progress: {100*step//total_steps}%")
 
         if done:
@@ -483,13 +551,13 @@ def main():
     parser.add_argument("--direction", type=str, default=None,
                        choices=['x', '-x', 'y', '-y', 'z', '-z', 'hover'])
     parser.add_argument("--magnitude", type=float, default=None, choices=[0.0, 0.1, 0.5])
-    parser.add_argument("--repeat", action="store_true", default=None)
-    parser.add_argument("--no-repeat", action="store_true")
+    parser.add_argument("--mode", type=str, default=None, choices=['repeat', 'step'],
+                       help="'repeat': same action all episode, 'step': select action each step")
     parser.add_argument("--duration", type=float, default=10.0)
     parser.add_argument("--gui", action="store_true")
     parser.add_argument("--output-dir", type=str, default=".")
     parser.add_argument("--interactive", "-i", action="store_true",
-                       help="Use interactive menu for action selection")
+                       help="Use interactive menu for initial action selection")
 
     args = parser.parse_args()
 
@@ -499,23 +567,18 @@ def main():
     drone_model = model_map[args.drone]
 
     # Determine action parameters
-    if args.interactive or (args.direction is None and args.magnitude is None):
-        direction, magnitude, repeat = interactive_action_selection()
+    if args.interactive or (args.direction is None and args.magnitude is None and args.mode is None):
+        direction, magnitude, mode = interactive_action_selection()
     else:
         direction = args.direction or 'z'
         magnitude = args.magnitude if args.magnitude is not None else 0.1
-        if args.no_repeat:
-            repeat = False
-        elif args.repeat:
-            repeat = True
-        else:
-            repeat = True
+        mode = args.mode or 'repeat'
 
     run_velocity_test(
         drone_model=drone_model,
         direction=direction,
         magnitude=magnitude,
-        repeat=repeat,
+        mode=mode,
         duration_sec=args.duration,
         gui=args.gui,
         output_dir=args.output_dir,
