@@ -6,3 +6,5 @@ __pycache__/
 
 # Visual debug test output videos
 drone_*.mp4
+velocity_test_*.mp4
+size_comparison_*.mp4
