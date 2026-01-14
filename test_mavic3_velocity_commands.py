@@ -349,44 +349,51 @@ def interactive_action_selection():
 
 
 def quick_action_selection():
-    """Quick single-key action selection during episode.
+    """Full action selection menu for step-by-step mode.
 
-    Returns (direction, magnitude) tuple, or None to keep current action.
+    Returns (direction, magnitude, continue) tuple.
+    - direction: 'x', '-x', 'y', '-y', 'z', '-z', 'hover'
+    - magnitude: 0.0, 0.1, 0.5
+    - continue: True to continue, False to exit episode
     """
-    print("\n[Quick Action] Press key + Enter:")
-    print("  w/s: +Z/-Z (up/down)    a/d: -X/+X (left/right)")
-    print("  q/e: +Y/-Y (fwd/back)   0/1/5: magnitude 0.0/0.1/0.5")
-    print("  h: hover    k: keep current    x: exit episode")
+    print("\n" + "-" * 40)
+    print("Step Action Selection")
+    print("-" * 40)
 
-    choice = input("> ").strip().lower()
+    # Direction selection
+    print("\nSelect direction:")
+    print("  1. +X (forward)    2. -X (backward)")
+    print("  3. +Y (left)       4. -Y (right)")
+    print("  5. +Z (up)         6. -Z (down)")
+    print("  7. Hover           x. Exit episode")
 
-    if choice == 'x':
-        return 'exit', 0.0
-    elif choice == 'k' or choice == '':
-        return None, None  # Keep current
-    elif choice == 'h':
-        return 'hover', 0.0
-    elif choice == 'w':
-        return 'z', None  # Keep current magnitude
-    elif choice == 's':
-        return '-z', None
-    elif choice == 'a':
-        return '-x', None
-    elif choice == 'd':
-        return 'x', None
-    elif choice == 'q':
-        return 'y', None
-    elif choice == 'e':
-        return '-y', None
-    elif choice == '0':
-        return None, 0.0
-    elif choice == '1':
-        return None, 0.1
-    elif choice == '5':
-        return None, 0.5
-    else:
-        print(f"Unknown key: {choice}")
-        return None, None
+    dir_map = {'1': 'x', '2': '-x', '3': 'y', '4': '-y', '5': 'z', '6': '-z', '7': 'hover'}
+
+    while True:
+        choice = input("Direction (1-7, x=exit): ").strip().lower()
+        if choice == 'x':
+            return None, None, False  # Exit episode
+        if choice in dir_map:
+            direction = dir_map[choice]
+            break
+        print("Invalid. Enter 1-7 or x.")
+
+    # Magnitude selection
+    print("\nSelect magnitude:")
+    print("  1. 0.0 (no velocity)")
+    print("  2. 0.1 (slow)")
+    print("  3. 0.5 (medium)")
+
+    mag_map = {'1': 0.0, '2': 0.1, '3': 0.5}
+
+    while True:
+        choice = input("Magnitude (1-3): ").strip()
+        if choice in mag_map:
+            magnitude = mag_map[choice]
+            break
+        print("Invalid. Enter 1-3.")
+
+    return direction, magnitude, True  # Continue episode
 
 
 def run_velocity_test(
@@ -465,22 +472,16 @@ def run_velocity_test(
 
     frame_count = 0
     for step in range(total_steps):
-        # In step mode, prompt for new action
+        # In step mode, prompt for new action at each step
         if mode == 'step':
-            new_dir, new_mag = quick_action_selection()
+            new_dir, new_mag, should_continue = quick_action_selection()
 
-            if new_dir == 'exit':
+            if not should_continue:
                 print("Exiting episode early...")
                 break
 
-            # Update direction if provided
-            if new_dir is not None:
-                current_direction = new_dir
-
-            # Update magnitude if provided
-            if new_mag is not None:
-                current_magnitude = new_mag
-
+            current_direction = new_dir
+            current_magnitude = new_mag
             current_action = get_action_from_direction(current_direction, current_magnitude)
             print(f"  -> Action: {current_direction} @ {current_magnitude} = {current_action}")
 
