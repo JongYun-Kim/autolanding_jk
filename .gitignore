@@ -3,3 +3,6 @@ exp_local
 temp_results
 __pycache__/
 *.pyc
+
+# Visual debug test output videos
+drone_*.mp4
