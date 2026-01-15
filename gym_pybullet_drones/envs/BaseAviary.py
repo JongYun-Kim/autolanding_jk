@@ -19,6 +19,7 @@ class DroneModel(Enum):
     CF2X = "cf2x"   # Bitcraze Craziflie 2.0 in the X config
     CF2P = "cf2p"   # Bitcraze Craziflie 2.0 in the + config
     HB = "hb"       # Generic quadrotor (with AscTec Hummingbird inertial properties)
+    MAVIC3 = "mavic3"  # DJI Mavic 3 (0.895 kg, X config)
 
 
 class Physics(Enum):
@@ -151,9 +152,11 @@ class BaseAviary(gym.Env):
         self.HOVER_RPM = np.sqrt(self.GRAVITY / (4*self.KF))
         self.MAX_RPM = np.sqrt((self.THRUST2WEIGHT_RATIO*self.GRAVITY) / (4*self.KF))
         self.MAX_THRUST = (4*self.KF*self.MAX_RPM**2)
-        if self.DRONE_MODEL == DroneModel.CF2X:
+        if self.DRONE_MODEL in [DroneModel.CF2X, DroneModel.MAVIC3]:
+            # X-configuration: motors at 45 degrees, torque arm is L/sqrt(2)
             self.MAX_XY_TORQUE = (2*self.L*self.KF*self.MAX_RPM**2)/np.sqrt(2)
         elif self.DRONE_MODEL in [DroneModel.CF2P, DroneModel.HB]:
+            # Plus-configuration: motors aligned with axes
             self.MAX_XY_TORQUE = (self.L*self.KF*self.MAX_RPM**2)
         self.MAX_Z_TORQUE = (2*self.KM*self.MAX_RPM**2)
         self.GND_EFF_H_CLIP = 0.25 * self.PROP_RADIUS * np.sqrt((15 * self.MAX_RPM**2 * self.KF * self.GND_EFF_COEFF) / self.MAX_THRUST)
@@ -181,9 +184,11 @@ class BaseAviary(gym.Env):
         # Create attributes for dynamics control inputs
         self.DYNAMICS_ATTR = dynamics_attributes
         if self.DYNAMICS_ATTR:
-            if self.DRONE_MODEL == DroneModel.CF2X:
+            if self.DRONE_MODEL in [DroneModel.CF2X, DroneModel.MAVIC3]:
+                # X-configuration motor mixer matrix
                 self.A = np.array([ [1, 1, 1, 1], [1/np.sqrt(2), 1/np.sqrt(2), -1/np.sqrt(2), -1/np.sqrt(2)], [-1/np.sqrt(2), 1/np.sqrt(2), 1/np.sqrt(2), -1/np.sqrt(2)], [-1, 1, -1, 1] ])
             elif self.DRONE_MODEL in [DroneModel.CF2P, DroneModel.HB]:
+                # Plus-configuration motor mixer matrix
                 self.A = np.array([ [1, 1, 1, 1], [0, 1, 0, -1], [-1, 0, 1, 0], [-1, 1, -1, 1] ])
             self.INV_A = np.linalg.inv(self.A)
             self.B_COEFF = np.array([1/self.KF, 1/(self.KF*self.L), 1/(self.KF*self.L), 1/self.KM])

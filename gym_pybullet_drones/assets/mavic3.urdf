@@ -1,0 +1,133 @@
+<?xml version="1.0" ?>
+
+<robot name="mavic3">
+
+  <!--
+    DJI Mavic 3 Drone Model
+    =======================
+    Physical specifications:
+    - Mass: 0.895 kg
+    - Unfolded dimensions: 347.5 x 283 x 107.7 mm (L x W x H)
+    - Propeller: 238.8 mm diameter (9.4 inches)
+
+    Parameter derivations:
+    - Arm length (0.112 m): Estimated from unfolded diagonal dimensions
+    - Inertia: Box approximation using unfolded body dimensions
+    - KF (7.5e-8): Back-calculated from thrust-to-weight ratio of 2.0
+    - KM (1.88e-9): Using KM/KF ratio of ~1/40 (similar to CF2X)
+    - Drag coefficients: Scaled ~10x from CF2X based on frontal area ratio
+    - Ground effect & downwash: Kept same as CF2X (no empirical data available)
+
+    Notes:
+    - thrust2weight=2.0 is a conservative estimate; adjust if flight is too sluggish or aggressive
+    - max_speed_kmh=30 kept same as CF2X per requirement for consistent velocity commands
+    - Visual uses scaled CF2X mesh (scale factor ~4x)
+  -->
+
+  <properties arm="0.112" kf="7.5e-8" km="1.88e-9" thrust2weight="2.0" max_speed_kmh="30" gnd_eff_coeff="11.36859" prop_radius="0.12" drag_coeff_xy="9.18e-6" drag_coeff_z="1.03e-5" dw_coeff_1="2267.18" dw_coeff_2=".16" dw_coeff_3="-.11" />
+
+  <link name="base_link">
+
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <mass value="0.895"/>
+      <!-- Inertia calculated using box approximation with unfolded dimensions:
+           Ixx = (1/12) * m * (W^2 + H^2) = (1/12) * 0.895 * (0.283^2 + 0.1077^2) = 6.84e-3
+           Iyy = (1/12) * m * (L^2 + H^2) = (1/12) * 0.895 * (0.3475^2 + 0.1077^2) = 9.88e-3
+           Izz = (1/12) * m * (L^2 + W^2) = (1/12) * 0.895 * (0.3475^2 + 0.283^2) = 1.50e-2
+      -->
+      <inertia ixx="6.84e-3" ixy="0.0" ixz="0.0" iyy="9.88e-3" iyz="0.0" izz="1.50e-2"/>
+    </inertial>
+
+    <visual>
+      <origin rpy="0 0 55" xyz="0 0 0"/>
+      <geometry>
+        <!-- Scaled CF2X mesh by approximately 4x to match Mavic3 body size -->
+        <mesh filename="./cf2.dae" scale="4 4 4"/>
+      </geometry>
+      <material name="grey">
+        <color rgba=".3 .3 .3 1"/>
+      </material>
+    </visual>
+
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <!-- Collision cylinder scaled ~4x from CF2X (0.06 -> 0.24, 0.025 -> 0.10) -->
+        <cylinder radius="0.24" length="0.10"/>
+      </geometry>
+    </collision>
+
+  </link>
+
+  <!-- Motor positions for X-configuration
+       arm = 0.112 m (center to motor distance)
+       For X-config: motor_offset = arm / sqrt(2) = 0.112 / 1.414 = 0.0792 m
+
+       Prop 0: Front-right (+X, +Y)
+       Prop 1: Front-left  (-X, +Y)
+       Prop 2: Rear-left   (-X, -Y)
+       Prop 3: Rear-right  (+X, -Y)
+  -->
+
+  <link name="prop0_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.0792 0.0792 0"/>
+      <mass value="0"/>
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+    </inertial>
+  </link>
+  <joint name="prop0_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="prop0_link"/>
+  </joint>
+
+  <link name="prop1_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.0792 0.0792 0"/>
+      <mass value="0"/>
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+    </inertial>
+  </link>
+  <joint name="prop1_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="prop1_link"/>
+  </joint>
+
+  <link name="prop2_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.0792 -0.0792 0"/>
+      <mass value="0"/>
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+    </inertial>
+  </link>
+  <joint name="prop2_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="prop2_link"/>
+  </joint>
+
+  <link name="prop3_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.0792 -0.0792 0"/>
+      <mass value="0"/>
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+    </inertial>
+  </link>
+  <joint name="prop3_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="prop3_link"/>
+  </joint>
+
+  <link name="center_of_mass_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <mass value="0"/>
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+    </inertial>
+  </link>
+  <joint name="center_of_mass_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="center_of_mass_link"/>
+  </joint>
+
+</robot>

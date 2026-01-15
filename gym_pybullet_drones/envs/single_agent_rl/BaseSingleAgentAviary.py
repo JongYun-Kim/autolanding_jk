@@ -9,6 +9,7 @@ from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics, ImageType, 
 from gym_pybullet_drones.utils.utils import nnlsRPM
 from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
 from gym_pybullet_drones.control.SimplePIDControl import SimplePIDControl
+from gym_pybullet_drones.control.Mavic3PIDControl import Mavic3PIDControl
 import cv2
 
 
@@ -100,6 +101,16 @@ class BaseSingleAgentAviary(BaseAviary):
                     self.TUNED_P_ATT = np.array([70000., 70000., 60000.])
                     self.TUNED_I_ATT = np.array([.0, .0, 500.])
                     self.TUNED_D_ATT = np.array([20000., 20000., 12000.])
+            elif drone_model == DroneModel.MAVIC3:
+                self.ctrl = Mavic3PIDControl(drone_model=DroneModel.MAVIC3)
+                if act == ActionType.TUN:
+                    # Mavic3 tuning defaults (scaled from CF2X)
+                    self.TUNED_P_POS = np.array([.4, .4, 1.25])
+                    self.TUNED_I_POS = np.array([.05, .05, .05])
+                    self.TUNED_D_POS = np.array([.3, .3, .6])
+                    self.TUNED_P_ATT = np.array([52500., 52500., 45000.])
+                    self.TUNED_I_ATT = np.array([.0, .0, 375.])
+                    self.TUNED_D_ATT = np.array([15000., 15000., 9000.])
             elif drone_model == DroneModel.HB:
                 self.ctrl = SimplePIDControl(drone_model=DroneModel.HB)
                 if act == ActionType.TUN:
