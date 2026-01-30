@@ -3,6 +3,7 @@ import time
 import collections
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 import xml.etree.ElementTree as etxml
 import numpy as np
 import pybullet as p
@@ -103,6 +104,19 @@ class BaseAviary(gym.Env):
             Frequency of sinusoidal oscillation in Hz (only used if gv_path_type="sinusoidal"). Default: 0.5.
 
         """
+        # Setup workspace directory for resources
+        # Priority 1: Use environment variable if set
+        workspace_dir = os.getenv('WORKSPACE_DIR')
+        # Priority 2: Calculate from file location if environment variable not set
+        if workspace_dir is None:
+            current_file = Path(__file__).resolve()  # gym_pybullet_drones/envs/BaseAviary.py
+            project_root = current_file.parent.parent.parent  # /workspace/autolanding_jk/
+            workspace_dir = str(project_root.parent)  # /workspace/
+
+        self.workspace_dir = workspace_dir
+        self.resource_dir = os.path.join(workspace_dir, "resources")
+        self.project_root = os.path.join(workspace_dir, "autolanding_jk")
+
         # Constants
         self.G = 9.8
         self.RAD2DEG = 180/np.pi
@@ -384,18 +398,18 @@ class BaseAviary(gym.Env):
     def _randomizer(self, init_seed = 1):
         # Path to GV URDF file
         car_version = 7
-        self.xacro_file = "/home/user/resources/g_vehicle/car_v{}.urdf".format(car_version)  # car_v2: sim, car_v4: real landing pad images
+        self.xacro_file = os.path.join(self.resource_dir, "g_vehicle", "car_v{}.urdf".format(car_version))  # car_v2: sim, car_v4: real landing pad images
         # Path to the file to be parsed
         self.parsed_urdf_idx = (1 + self.parsed_urdf_idx) % 1000
-        resource_dir = "/home/user/resources/"
-        vehicle_dir = resource_dir + "g_vehicle/"
-        parsed_dir = vehicle_dir + "parsed_files_2/"
-        self.urdf_file = parsed_dir + "parsed_{}_real_pad.urdf".format(self.parsed_urdf_idx)
-        self.new_base_mtl = parsed_dir + "base{}.mtl".format(self.parsed_urdf_idx)
-        self.new_base_obj = parsed_dir + "base{}.obj".format(self.parsed_urdf_idx)
-        self.original_base_mtl = vehicle_dir + "base.mtl"
-        self.original_base_obj = vehicle_dir + "base.obj"
-        real_pad_path = random.choice(os.listdir(resource_dir + "transformed_2"))
+        resource_dir = self.resource_dir
+        vehicle_dir = os.path.join(resource_dir, "g_vehicle")
+        parsed_dir = os.path.join(vehicle_dir, "parsed_files_2")
+        self.urdf_file = os.path.join(parsed_dir, "parsed_{}_real_pad.urdf".format(self.parsed_urdf_idx))
+        self.new_base_mtl = os.path.join(parsed_dir, "base{}.mtl".format(self.parsed_urdf_idx))
+        self.new_base_obj = os.path.join(parsed_dir, "base{}.obj".format(self.parsed_urdf_idx))
+        self.original_base_mtl = os.path.join(vehicle_dir, "base.mtl")
+        self.original_base_obj = os.path.join(vehicle_dir, "base.obj")
+        real_pad_path = random.choice(os.listdir(os.path.join(resource_dir, "transformed_2")))
         with open(self.xacro_file, 'r+') as mycar:
             lines = mycar.readlines()
             for index, line in enumerate(lines):
@@ -816,7 +830,7 @@ class BaseAviary(gym.Env):
 
         if self.distortion:
             rgb = self._getDroneImages(0)[0]
-            path = "/home/user/landing/images/"
+            path = os.path.join(self.project_root, "images")
             self._exportImage(ImageType.RGB,self.distorted_img, path)        
         obs = np.clip(obs,0, 255)
         return obs, reward, done, info
