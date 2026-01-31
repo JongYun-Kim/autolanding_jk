@@ -441,7 +441,7 @@ class BaseAviary(gym.Env):
         os.system(parser_command)
 
         # Path to the dtd file
-        dtd_path = resource_dir + 'dtd'  # other data set: 'minc/minc-2500'
+        dtd_path = os.path.join(resource_dir, 'dtd')  # other data set: 'minc/minc-2500'
         random_texture = True
         if random_texture:
             texture_paths = glob.glob(os.path.join(dtd_path, '**', '*.jpg'), recursive=True)
