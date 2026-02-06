@@ -54,7 +54,7 @@ agent:
   lr_schedule: ${lr_schedule}
   auxiliary_task:
     enable: false  # Disabled by default for backward compatibility
-    weight: 0.1    # Weight of auxiliary loss relative to critic loss
+    weight: 400.0  # Weight of auxiliary loss relative to critic loss
     hidden_dim: 128  # Hidden dimension of auxiliary prediction head
 
 hydra:

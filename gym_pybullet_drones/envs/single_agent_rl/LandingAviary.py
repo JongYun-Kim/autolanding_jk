@@ -936,6 +936,11 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
         # 잠금 초기화
         if spec.lock_down or not spec.gimbal_enabled:
             self.gimbal_target = self.initial_gimbal_target.copy()
+        else:
+            if self.gimbal_target is None:
+                self.gimbal_target = self.initial_gimbal_target.copy()
+                for _ in range(8):
+                    print("  <3<3<3<3 THIS MUST BE SHOWN ONLY AT THE INITIAL STAGE AND INITIAL STEP of the first episode !!!!!!!")
         self._prev_gimbal_target = self.gimbal_target.copy()
 
     def _pitch_enabled(self) -> bool:
