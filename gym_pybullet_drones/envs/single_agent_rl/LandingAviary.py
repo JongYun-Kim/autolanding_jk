@@ -775,7 +775,20 @@ class LandingGimbalAviary(LandingAviary):
         self._update_gimbal_dynamics(self.gimbal_target, dt)
 
         vel_cmd = action[0:3]
-        return super().step(vel_cmd)
+        obs, reward, done, info = super().step(vel_cmd)
+
+        # Add oracle gimbal angles for auxiliary task supervision
+        # Only compute oracle gimbal for gimbal-enabled environments
+        try:
+            oracle = self.compute_oracle_gimbal()
+            # Extract only pitch and yaw (indices 0 and 2) from angles_norm
+            # Format: [pitch, yaw] in normalized space [-1, 1]
+            info['oracle_gimbal'] = oracle['angles_norm'][[0, 2]].astype(np.float32)
+        except (AttributeError, NotImplementedError):
+            # If oracle gimbal not available (e.g., base LandingAviary), set to None
+            info['oracle_gimbal'] = None
+
+        return obs, reward, done, info
 
     def _compute_hv_rewards(self, drone_position, drone_velocity, pad_position):
         desired_z_velocity = -0.5
@@ -1026,6 +1039,11 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
         # 잠금 초기화
         if spec.lock_down or not spec.gimbal_enabled:
             self.gimbal_target = self.initial_gimbal_target.copy()
+        else:
+            if self.gimbal_target is None:
+                self.gimbal_target = self.initial_gimbal_target.copy()
+                for _ in range(8):
+                    print("  <3<3<3<3 THIS MUST BE SHOWN ONLY AT THE INITIAL STAGE AND INITIAL STEP of the first episode !!!!!!!")
         self._prev_gimbal_target = self.gimbal_target.copy()
 
     def _pitch_enabled(self) -> bool:

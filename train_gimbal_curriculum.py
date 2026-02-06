@@ -99,7 +99,8 @@ class Workspace:
                       self.train_env.action_spec(),
                       self.train_env.reward_spec(),
                       self.train_env.discount_spec(),
-                      self.train_env.drone_state_spec())
+                      self.train_env.drone_state_spec(),
+                      self.train_env.oracle_gimbal_spec())
 
         self.replay_storage = ReplayBufferStorage(data_specs, self.work_dir / 'buffer')
         self.replay_loader = make_replay_loader(
