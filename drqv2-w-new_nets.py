@@ -42,6 +42,35 @@ class RandomShiftsAug(nn.Module):
         return F.grid_sample(x, grid, padding_mode='zeros', align_corners=False) # [B, C, H, W]
 
 
+class AuxiliaryGimbalHead(nn.Module):
+    """
+    Auxiliary task head for predicting oracle gimbal angles.
+    Takes encoder representation and predicts [pitch, yaw] in normalized space [-1, 1].
+
+    Args:
+        repr_dim: Dimension of encoder representation
+        hidden_dim: Hidden dimension of the MLP (default: 128)
+    """
+    def __init__(self, repr_dim, hidden_dim=128):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(repr_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.Tanh(),
+            nn.Linear(hidden_dim, 2)  # Output: [pitch, yaw]
+        )
+        self.apply(utils.weight_init)
+
+    def forward(self, h):
+        """
+        Args:
+            h: [B, repr_dim] encoder representation
+        Returns:
+            gimbal_pred: [B, 2] predicted normalized gimbal angles [pitch, yaw]
+        """
+        return self.mlp(h)
+
+
 class EncoderBaseline(nn.Module):
     """
     기존 CNN + 상태 concat 방식.
@@ -794,7 +823,8 @@ class DrQV2Agent:
                  actor_type: str = 'original',
                  actor_cfg: dict = None,
                  critic_type: str = 'original',
-                 lr_schedule: dict = None):
+                 lr_schedule: dict = None,
+                 auxiliary_task: dict = None):
         self.device = device
         self.critic_target_tau = critic_target_tau
         self.update_every_steps = update_every_steps
@@ -873,8 +903,27 @@ class DrQV2Agent:
 
         self.critic_target.load_state_dict(self.critic.state_dict())
 
+        # Auxiliary task setup (gimbal angle prediction)
+        aux_cfg = auxiliary_task or {}
+        self.aux_enabled = aux_cfg.get('enable', False)
+        self.aux_weight = aux_cfg.get('weight', 0.1)
+        self.aux_hidden_dim = aux_cfg.get('hidden_dim', 128)
+
+        if self.aux_enabled:
+            self.auxiliary_head = AuxiliaryGimbalHead(
+                self.encoder.repr_dim,
+                hidden_dim=self.aux_hidden_dim
+            ).to(device)
+            print(f"[DrQV2Agent] Auxiliary gimbal task ENABLED (weight={self.aux_weight})")
+        else:
+            self.auxiliary_head = None
+            print("[DrQV2Agent] Auxiliary gimbal task DISABLED")
+
         # Optimizers
-        self.encoder_opt = torch.optim.Adam(self.encoder.parameters(), lr=lr)
+        encoder_params = list(self.encoder.parameters())
+        if self.aux_enabled:
+            encoder_params += list(self.auxiliary_head.parameters())
+        self.encoder_opt = torch.optim.Adam(encoder_params, lr=lr)
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=lr)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=lr)
 
@@ -899,12 +948,16 @@ class DrQV2Agent:
         self.encoder.train(training)
         self.actor.train(training)
         self.critic.train(training)
+        if self.aux_enabled:
+            self.auxiliary_head.train(training)
 
     def eval(self, training=False):
         self.training = training
         self.encoder.eval()
         self.actor.eval()
         self.critic.eval()
+        if self.aux_enabled:
+            self.auxiliary_head.eval()
 
     def act(self, obs, step, drone_states, eval_mode):
         """
@@ -928,7 +981,7 @@ class DrQV2Agent:
                     action.uniform_(-1.0, 1.0)
         return action.cpu().numpy()[0]
 
-    def update_critic(self, obs, action, reward, discount, next_obs, step):
+    def update_critic(self, obs, action, reward, discount, next_obs, step, oracle_gimbal=None):
         metrics = dict()
         with torch.no_grad():
             stddev = utils.schedule(self.stddev_schedule, step)
@@ -941,16 +994,34 @@ class DrQV2Agent:
         Q1, Q2 = self.critic(obs, action)
         critic_loss = F.mse_loss(Q1, target_Q) + F.mse_loss(Q2, target_Q)
 
+        # Compute auxiliary loss if enabled and oracle_gimbal is available
+        total_loss = critic_loss
+        if self.aux_enabled and oracle_gimbal is not None:
+            # Predict gimbal angles from encoder representation
+            gimbal_pred = self.auxiliary_head(obs)  # [B, 2]
+
+            # Compute MSE loss between predicted and oracle gimbal angles
+            aux_loss = F.mse_loss(gimbal_pred, oracle_gimbal)
+
+            # Add weighted auxiliary loss to total loss
+            total_loss = critic_loss + self.aux_weight * aux_loss
+
+            if self.use_tb:
+                metrics['aux_loss'] = aux_loss.item()
+                metrics['aux_gimbal_error'] = (gimbal_pred - oracle_gimbal).abs().mean().item()
+
         if self.use_tb:
             metrics['critic_target_q'] = target_Q.mean().item()
             metrics['critic_q1'] = Q1.mean().item()
             metrics['critic_q2'] = Q2.mean().item()
             metrics['critic_loss'] = critic_loss.item()
+            if self.aux_enabled and oracle_gimbal is not None:
+                metrics['total_loss'] = total_loss.item()
 
         # optimize encoder and critic
         self.encoder_opt.zero_grad(set_to_none=True)
         self.critic_opt.zero_grad(set_to_none=True)
-        critic_loss.backward()
+        total_loss.backward()
         self.critic_opt.step()
         self.encoder_opt.step()
         return metrics
@@ -989,8 +1060,8 @@ class DrQV2Agent:
         batch = next(replay_iter)
         # batch unpack
         # obs: [B,C,H,W], action: [B,A], reward:[B,1 or rewards-dim], discount:[B,1]
-        # next_obs:[B,C,H,W], drone_state: [B,T,11], next_drone_state: [B,T,11]
-        obs, action, reward, discount, next_obs, drone_state, next_drone_state = utils.to_torch(batch, self.device)
+        # next_obs:[B,C,H,W], drone_state: [B,T,11], next_drone_state: [B,T,11], oracle_gimbal: [B,2]
+        obs, action, reward, discount, next_obs, drone_state, next_drone_state, oracle_gimbal = utils.to_torch(batch, self.device)
 
         # Handles curriculum conditional reward
         if difficulty is not None:
@@ -1012,7 +1083,7 @@ class DrQV2Agent:
             metrics['batch_reward'] = reward.mean().item()
 
         # update critic
-        metrics.update(self.update_critic(h_obs, action, reward, discount, h_next, step))
+        metrics.update(self.update_critic(h_obs, action, reward, discount, h_next, step, oracle_gimbal))
 
         # update actor (stop gradient through critic)
         metrics.update(self.update_actor(h_obs.detach(), step))

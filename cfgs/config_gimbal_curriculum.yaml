@@ -52,6 +52,10 @@ agent:
   stddev_clip: 0.32
   frame_stack: ${frame_stack}
   lr_schedule: ${lr_schedule}
+  auxiliary_task:
+    enable: false  # Disabled by default for backward compatibility
+    weight: 400.0  # Weight of auxiliary loss relative to critic loss
+    hidden_dim: 128  # Hidden dimension of auxiliary prediction head
 
 hydra:
   run:
