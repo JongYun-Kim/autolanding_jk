@@ -709,7 +709,9 @@ class LandingGimbalAviary(LandingAviary):
 
             # Normalized velocity to rad/s
             # max_norm_velocity is how much we can change in normalized space per second
-            max_norm_velocity = self.gimbal_max_velocity / (range_width_rad / 2.0)  # per second
+            active = range_width_rad > 0
+            max_norm_velocity = np.zeros(3, dtype=np.float64)
+            max_norm_velocity[active] = self.gimbal_max_velocity / (range_width_rad[active] / 2.0)
             max_norm_velocity = np.clip(max_norm_velocity, 0.0, 100.0)  # sanity check
 
             # Velocity command in normalized space per second
@@ -730,7 +732,9 @@ class LandingGimbalAviary(LandingAviary):
             range_width_rad = hi - lo
 
             # Normalized acceleration to rad/s^2
-            max_norm_acceleration = self.gimbal_max_acceleration / (range_width_rad / 2.0)  # per second^2
+            active = range_width_rad > 0
+            max_norm_acceleration = np.zeros(3, dtype=np.float64)
+            max_norm_acceleration[active] = self.gimbal_max_acceleration / (range_width_rad[active] / 2.0)
             max_norm_acceleration = np.clip(max_norm_acceleration, 0.0, 1000.0)  # sanity check
 
             # Acceleration command in normalized space per second^2
@@ -740,7 +744,8 @@ class LandingGimbalAviary(LandingAviary):
             self.gimbal_current_velocity = self.gimbal_current_velocity + accel_cmd * dt
 
             # Limit velocity
-            max_norm_velocity = self.gimbal_max_velocity / (range_width_rad / 2.0)  # per second
+            max_norm_velocity = np.zeros(3, dtype=np.float64)
+            max_norm_velocity[active] = self.gimbal_max_velocity / (range_width_rad[active] / 2.0)
             max_norm_velocity = np.clip(max_norm_velocity, 0.0, 100.0)
             self.gimbal_current_velocity = np.clip(
                 self.gimbal_current_velocity,
@@ -941,7 +946,7 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
 
     # 기본 Curriculum
     def _default_curriculum(self) -> List[CurriculumStageSpec]:
-        for _ in range(32):
+        for _ in range(4):
             print(f"  [WARNING] Using default curriculum in {self.__class__.__name__}, consider providing a custom curriculum_cfg!")
         return [
             CurriculumStageSpec(  # S0: 짐벌 고정, 보상 off
