@@ -15,6 +15,7 @@ def test_position_mode():
     print("="*60)
 
     env = gym.make('gimbal-curriculum-landing-aviary-v0')
+    env.set_curriculum_stage(4)  # Skip to S4_full so gimbal commands are not masked
     obs = env.reset()
 
     # Test a few steps with gimbal commands
@@ -48,6 +49,7 @@ def test_velocity_mode():
     env = gym.make('gimbal-curriculum-landing-aviary-v0',
                    gimbal_control_mode='velocity',
                    gimbal_max_velocity=3.0)
+    env.set_curriculum_stage(4)  # Skip to S4_full so gimbal commands are not masked
     obs = env.reset()
 
     # Initial position should be at initial_gimbal_target
@@ -87,6 +89,7 @@ def test_acceleration_mode():
                    gimbal_control_mode='acceleration',
                    gimbal_max_velocity=3.0,
                    gimbal_max_acceleration=10.0)
+    env.set_curriculum_stage(4)  # Skip to S4_full so gimbal commands are not masked
     obs = env.reset()
 
     # Initial state
@@ -137,6 +140,7 @@ def test_angle_limits():
                        gimbal_control_mode=mode,
                        gimbal_max_velocity=10.0,  # High values to try to exceed limits
                        gimbal_max_acceleration=50.0)
+        env.set_curriculum_stage(4)  # Skip to S4_full so gimbal commands are not masked
         obs = env.reset()
 
         # Command maximum positive values
@@ -173,6 +177,7 @@ def test_reset_consistency():
                        gimbal_control_mode=mode,
                        gimbal_max_velocity=3.0,
                        gimbal_max_acceleration=10.0)
+        env.set_curriculum_stage(4)  # Skip to S4_full so gimbal commands are not masked
 
         # First reset
         obs = env.reset()
