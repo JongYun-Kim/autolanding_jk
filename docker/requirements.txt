@@ -1,0 +1,37 @@
+# Requirements for train_gimbal_curriculum.py
+# Minimal dependencies required to run the gimbal training script
+
+# PyTorch (with CUDA 12.4 support) - installed separately via pip with --index-url
+# torch>=2.0.0
+# torchvision>=0.15.0
+# torchaudio>=2.0.0
+
+# Configuration management
+hydra-core>=1.1.0
+hydra-submitit-launcher>=1.1.5
+omegaconf>=2.1.0
+submitit>=1.4.0
+
+# Numerical computing (numpy < 2.0 required for gym 0.23.1 compatibility)
+numpy>=1.24.0,<2.0.0
+scipy>=1.9.0
+
+# Computer vision
+opencv-python>=4.5.0
+Pillow>=9.0.0
+imageio>=2.9.0
+imageio-ffmpeg>=0.4.4
+
+# Simulation
+pybullet>=3.2.0
+gym==0.23.1
+xacro>=1.13.0
+
+# Geometry
+shapely>=2.0.0
+
+# Logging and visualization
+termcolor>=1.1.0
+tensorboard>=2.10.0
+matplotlib>=3.4.0
+cycler>=0.11.0
