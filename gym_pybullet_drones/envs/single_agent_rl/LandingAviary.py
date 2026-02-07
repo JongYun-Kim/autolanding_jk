@@ -31,7 +31,7 @@ class LandingAviary(BaseSingleAgentAviary):
                  episode_len_sec: int=18,
                  gv_path_type: str="straight",
                  gv_sinusoidal_amplitude: float=2.0,
-                 gv_sinusoidal_frequency: float=0.5
+                 gv_sinusoidal_frequency: float=0.5,
                  ):
         """Initialization of a single agent RL environment.
 
@@ -70,7 +70,7 @@ class LandingAviary(BaseSingleAgentAviary):
                          episode_len_sec=episode_len_sec,
                          gv_path_type=gv_path_type,
                          gv_sinusoidal_amplitude=gv_sinusoidal_amplitude,
-                         gv_sinusoidal_frequency=gv_sinusoidal_frequency
+                         gv_sinusoidal_frequency=gv_sinusoidal_frequency,
                          )
 
         self.num_step_repeats = 4
