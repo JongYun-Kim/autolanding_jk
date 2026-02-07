@@ -106,11 +106,11 @@ class BaseAviary(gym.Env):
         """
         # Setup workspace directory for resources
         current_file = Path(__file__).resolve()  # gym_pybullet_drones/envs/BaseAviary.py
-	self.project_root = str(current_file.parent.parent.parent)
+        self.project_root = str(current_file.parent.parent.parent)
         self.workspace_dir = os.getenv('WORKSPACE_DIR')
         if self.workspace_dir is None:
     	    self.workspace_dir = str(current_file.parent.parent.parent.parent)
-	self.resource_dir = os.path.join(self.workspace_dir, "resources")
+        self.resource_dir = os.path.join(self.workspace_dir, "resources")
 
         # Constants
         self.G = 9.8
