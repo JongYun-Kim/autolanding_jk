@@ -946,7 +946,7 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
 
     # 기본 Curriculum
     def _default_curriculum(self) -> List[CurriculumStageSpec]:
-        for _ in range(32):
+        for _ in range(4):
             print(f"  [WARNING] Using default curriculum in {self.__class__.__name__}, consider providing a custom curriculum_cfg!")
         return [
             CurriculumStageSpec(  # S0: 짐벌 고정, 보상 off
