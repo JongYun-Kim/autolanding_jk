@@ -62,7 +62,7 @@ class BaseAviary(gym.Env):
                  dynamics_attributes=False,
                  gv_path_type: str="straight",
                  gv_sinusoidal_amplitude: float=2.0,
-                 gv_sinusoidal_frequency: float=0.5
+                 gv_sinusoidal_frequency: float=0.5,
                  ):
         """Initialization of a generic aviary environment.
 
@@ -105,17 +105,12 @@ class BaseAviary(gym.Env):
 
         """
         # Setup workspace directory for resources
-        # Priority 1: Use environment variable if set
-        workspace_dir = os.getenv('WORKSPACE_DIR')
-        # Priority 2: Calculate from file location if environment variable not set
-        if workspace_dir is None:
-            current_file = Path(__file__).resolve()  # gym_pybullet_drones/envs/BaseAviary.py
-            project_root = current_file.parent.parent.parent  # /workspace/autolanding_jk/
-            workspace_dir = str(project_root.parent)  # /workspace/
-
-        self.workspace_dir = workspace_dir
-        self.resource_dir = os.path.join(workspace_dir, "resources")
-        self.project_root = os.path.join(workspace_dir, "autolanding_jk")
+        current_file = Path(__file__).resolve()  # gym_pybullet_drones/envs/BaseAviary.py
+	self.project_root = str(current_file.parent.parent.parent)
+        self.workspace_dir = os.getenv('WORKSPACE_DIR')
+        if self.workspace_dir is None:
+    	    self.workspace_dir = str(current_file.parent.parent.parent.parent)
+	self.resource_dir = os.path.join(self.workspace_dir, "resources")
 
         # Constants
         self.G = 9.8
