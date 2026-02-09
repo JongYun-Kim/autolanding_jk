@@ -4,12 +4,10 @@ import hydra
 import numpy as np
 from omegaconf import OmegaConf
 import torch
-# from train_toddler import Workspace
-# from train_gimbal_oracle import Workspace
-from train_gimbal import Workspace
-# from train import Workspace
+from train import Workspace
 from video import VideoRecorder  # for recording evaluation videos
 import csv
+
 
 def evaluate_workspace(workspace, model_type: str, num_episodes: int = 128, enable_video_recording: bool = True):
     """Run `num_episodes` episodes in evaluation mode.
@@ -143,7 +141,7 @@ def my_tests(cfg):
             continue
 
         workspace = Workspace(cfg)
-        workspace.load_snapshot(checkpoint_dir=snapshot_path)
+        workspace.load_snapshot(checkpoint_path=snapshot_path)
         print(f"Loaded snapshot from {snapshot_path}")
         workspace.agent.eval()
 
@@ -206,119 +204,6 @@ def setup_exp():
     num_episodes = 200
 
     experiment_settings = [
-        # {
-        #     "model_type": "drqv2-oracle-gimbal",
-        #     "target_dir": "/home/user/landing/exp_local/2025.08.19/192658_seed=42/",
-        #     "num_episodes": num_episodes,
-        # },
-        # {
-        #     "model_type": "drqv2-oracle-gimbal",
-        #     "target_dir": "/home/user/landing/exp_local/2025.08.18/223300_seed=1/",
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot_bk_2601k.pt",
-        # },
-        # {
-        #     "model_type": "drqv2-oracle-gimbal-1400k",
-        #     "target_dir": "/home/user/landing/exp_local/2025.08.21/015303_seed=42/",
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot_bk_1400k.pt",
-        # },
-        # {
-        #     "model_type": "drqv2-oracle-gimbal-1848k",
-        #     "target_dir": "/home/user/landing/exp_local/2025.08.21/015303_seed=42/",
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot_bk_1848k.pt",
-        # },
-        # {
-        #     "model_type": "drqv2-oracle-gimbal-2270k",
-        #     "target_dir": "/home/user/landing/exp_local/2025.08.21/015303_seed=42/",
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot_bk_2270k.pt",
-        # },
-        # {
-        #     "model_type": "drqv2-base-250819",
-        #     "target_dir": "/home/user/landing/exp_local/2025.08.19/192507_seed=42/",
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot.pt",
-        # },
-        # {
-        #     "model_type": "drqv2-oracle-gimbal-w-viz-rwd-1235k",
-        #     "target_dir": "/home/user/landing/exp_local/2025.09.01/001943_/",
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot_bk_1235k.pt",
-        # },
-        # {
-        #     "model_type": "drqv2-oracle-gimbal-w-viz-rwd-1750k",
-        #     "target_dir": "/home/user/landing/exp_local/2025.09.01/001943_/",
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot_bk_1750k.pt",
-        # },
-        # {
-        #     "model_type": "drqv2-oracle-gimbal-w-noise-3914k",
-        #     "target_dir": "/home/user/landing/exp_local/2025.09.01/001723_env.eval.is_noisy_gimbal=True,env.train.is_noisy_gimbal=True/",
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot_3914k_for_test.pt",
-        # },
-        # {
-        #     "model_type": "drqv2--gimbal-7m",
-        #     "target_dir": "/home/user/landing/exp_local/2025.08.30/111223_/",
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot.pt",
-        # },
-        # {
-        #     "model_type": "drqv2-gimbal-0913-7m",
-        #     "target_dir": "/home/user/landing/exp_local/2025.09.13/002322_num_train_frames=7000000,stddev_schedule='linear(1.0, 0.01, 6200000)'/",
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot.pt",
-        # },
-        # {
-        #     "model_type": "drqv2-gimbal-0913-4m",
-        #     "target_dir": "/home/user/landing/exp_local/2025.09.13/002250_num_train_frames=4000000,stddev_schedule='linear(1.0, 0.01, 3600000)'/",
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot.pt",
-        # },
-        # {
-        #     "model_type": "drqv2-gimbal-0913-3m",
-        #     "target_dir": "/home/user/landing/exp_local/2025.09.13/002135_num_train_frames=3000000,stddev_schedule='linear(1.0, 0.01, 2700000)'/",
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot.pt",
-        # },
-        # {
-        #     "model_type": "drqv2-gimbal-0913-7m-hyprtune-5729k",
-        #     "target_dir": "/home/user/landing/exp_local/2025.09.13/215446_agent.stddev_clip=0.42,batch_size=512,feature_dim=128,num_train_frames=7000000,replay_buffer_size=500000,stddev_schedule='linear(1.0, 0.01, 6250000)'/",
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot_5729k.pt",
-        # },
-        # {
-        #     "model_type": "drqv2-gimbal-0913-7m-hyprtune-6270k",
-        #     "target_dir": "/home/user/landing/exp_local/2025.09.13/215446_agent.stddev_clip=0.42,batch_size=512,feature_dim=128,num_train_frames=7000000,replay_buffer_size=500000,stddev_schedule='linear(1.0, 0.01, 6250000)'/",
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot_6270k.pt",
-        # },
-        # {
-        #     "model_type": "drqv2-gimbal-0913-7m-hyprtune-6844k",
-        #     "target_dir": "/home/user/landing/exp_local/2025.09.13/215446_agent.stddev_clip=0.42,batch_size=512,feature_dim=128,num_train_frames=7000000,replay_buffer_size=500000,stddev_schedule='linear(1.0, 0.01, 6250000)'/",
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot_6844k.pt",
-        # },
-        # {
-        #     "model_type": "drqv2-gimbal-0913-7m-hyprtune-6859k",
-        #     "target_dir": "/home/user/landing/exp_local/2025.09.13/215446_agent.stddev_clip=0.42,batch_size=512,feature_dim=128,num_train_frames=7000000,replay_buffer_size=500000,stddev_schedule='linear(1.0, 0.01, 6250000)'/",
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot_6859k.pt",
-        # },
-        # {
-        #     "model_type": "drqv2-gimbal-0913-7m-hyprtune-7000k",
-        #     "target_dir": "/home/user/landing/exp_local/2025.09.13/215446_agent.stddev_clip=0.42,batch_size=512,feature_dim=128,num_train_frames=7000000,replay_buffer_size=500000,stddev_schedule='linear(1.0, 0.01, 6250000)'/",
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot.pt",
-        # },
-        # {
-        #     "model_type": "drqv2-gimbal-0924-7m-full",
-        #     "target_dir": '/home/user/landing/exp_local/2025.09.24/222400_num_train_frames=7000000,seed=23,stddev_schedule="linear(1.0, 0.01, 6250000)"/',
-        #     "num_episodes": num_episodes,
-        #     "snapshot_name": "snapshot.pt",
-        # },
         {
             "model_type": "drqv2-gimbal-0927-4_8m",
             "target_dir": '/home/user/landing/exp_local/2025.09.27/111335_/',
