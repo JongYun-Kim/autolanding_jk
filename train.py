@@ -44,6 +44,12 @@ class Workspace:
         self.agent = make_agent(self.train_env.observation_spec(),
                                 self.train_env.action_spec(),
                                 self.cfg.agent)
+        # Guard: disable auxiliary gimbal task when oracle data is unavailable
+        if self.agent.aux_enabled and not getattr(self.cfg, 'gimbal_mode', False):
+            print("[WARNING] auxiliary_task.enable=true but gimbal_mode=false. "
+                  "Oracle gimbal targets are unavailable without a gimbal environment. "
+                  "Disabling auxiliary task to prevent training on degenerate zero targets.")
+            self.agent.aux_enabled = False
         self.timer = utils.Timer()
         self._global_step = 0
         self._global_episode = 0
