@@ -9,6 +9,8 @@ from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics, ImageType, 
 from gym_pybullet_drones.utils.utils import nnlsRPM
 from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
 from gym_pybullet_drones.control.SimplePIDControl import SimplePIDControl
+from gym_pybullet_drones.control.Mavic3PIDControl import Mavic3PIDControl
+from gym_pybullet_drones.control.Mavic3DSLPIDControl import Mavic3DSLPIDControl
 import cv2
 
 
@@ -47,7 +49,8 @@ class BaseSingleAgentAviary(BaseAviary):
                  episode_len_sec: int=30,
                  gv_path_type: str="straight",
                  gv_sinusoidal_amplitude: float=2.0,
-                 gv_sinusoidal_frequency: float=0.5
+                 gv_sinusoidal_frequency: float=0.5,
+                 controller_type=None
                  ):
         """Initialization of a generic single agent RL environment.
 
@@ -109,6 +112,18 @@ class BaseSingleAgentAviary(BaseAviary):
                     self.TUNED_P_ATT = np.array([.3, .3, .05])
                     self.TUNED_I_ATT = np.array([.0001, .0001, .0001])
                     self.TUNED_D_ATT = np.array([.3, .3, .5])
+            elif drone_model == DroneModel.MAVIC3:
+                if controller_type == "dsl":
+                    self.ctrl = Mavic3DSLPIDControl(drone_model=DroneModel.MAVIC3)
+                else:
+                    self.ctrl = Mavic3PIDControl(drone_model=DroneModel.MAVIC3)
+                if act == ActionType.TUN:
+                    self.TUNED_P_POS = np.array([.90, .90, 1.80])
+                    self.TUNED_I_POS = np.array([.001, .001, .005])
+                    self.TUNED_D_POS = np.array([4.5, 4.5, 7.15])
+                    self.TUNED_P_ATT = np.array([1.04, 1.20, .018])
+                    self.TUNED_I_ATT = np.array([.0001, .0001, .0001])
+                    self.TUNED_D_ATT = np.array([.090, .10, 0])
             else:
                 print("[ERROR] in BaseSingleAgentAviary.__init()__, no controller is available for the specified drone_model")
         super().__init__(drone_model=drone_model,

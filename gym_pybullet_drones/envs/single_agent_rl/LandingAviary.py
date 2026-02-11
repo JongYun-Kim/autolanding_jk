@@ -32,6 +32,7 @@ class LandingAviary(BaseSingleAgentAviary):
                  gv_path_type: str="straight",
                  gv_sinusoidal_amplitude: float=2.0,
                  gv_sinusoidal_frequency: float=0.5,
+                 controller_type=None,
                  ):
         """Initialization of a single agent RL environment.
 
@@ -71,6 +72,7 @@ class LandingAviary(BaseSingleAgentAviary):
                          gv_path_type=gv_path_type,
                          gv_sinusoidal_amplitude=gv_sinusoidal_amplitude,
                          gv_sinusoidal_frequency=gv_sinusoidal_frequency,
+                         controller_type=controller_type,
                          )
 
         self.num_step_repeats = 4

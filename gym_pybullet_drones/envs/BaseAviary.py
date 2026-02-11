@@ -20,6 +20,7 @@ class DroneModel(Enum):
     CF2X = "cf2x"   # Bitcraze Craziflie 2.0 in the X config
     CF2P = "cf2p"   # Bitcraze Craziflie 2.0 in the + config
     HB = "hb"       # Generic quadrotor (with AscTec Hummingbird inertial properties)
+    MAVIC3 = "mavic3" # DJI Mavic 3 in the X config
 
 
 class Physics(Enum):
@@ -160,7 +161,7 @@ class BaseAviary(gym.Env):
         self.HOVER_RPM = np.sqrt(self.GRAVITY / (4*self.KF))
         self.MAX_RPM = np.sqrt((self.THRUST2WEIGHT_RATIO*self.GRAVITY) / (4*self.KF))
         self.MAX_THRUST = (4*self.KF*self.MAX_RPM**2)
-        if self.DRONE_MODEL == DroneModel.CF2X:
+        if self.DRONE_MODEL in [DroneModel.CF2X, DroneModel.MAVIC3]:
             self.MAX_XY_TORQUE = (2*self.L*self.KF*self.MAX_RPM**2)/np.sqrt(2)
         elif self.DRONE_MODEL in [DroneModel.CF2P, DroneModel.HB]:
             self.MAX_XY_TORQUE = (self.L*self.KF*self.MAX_RPM**2)
@@ -190,7 +191,7 @@ class BaseAviary(gym.Env):
         # Create attributes for dynamics control inputs
         self.DYNAMICS_ATTR = dynamics_attributes
         if self.DYNAMICS_ATTR:
-            if self.DRONE_MODEL == DroneModel.CF2X:
+            if self.DRONE_MODEL in [DroneModel.CF2X, DroneModel.MAVIC3]:
                 self.A = np.array([ [1, 1, 1, 1], [1/np.sqrt(2), 1/np.sqrt(2), -1/np.sqrt(2), -1/np.sqrt(2)], [-1/np.sqrt(2), 1/np.sqrt(2), 1/np.sqrt(2), -1/np.sqrt(2)], [-1, 1, -1, 1] ])
             elif self.DRONE_MODEL in [DroneModel.CF2P, DroneModel.HB]:
                 self.A = np.array([ [1, 1, 1, 1], [0, 1, 0, -1], [-1, 0, 1, 0], [-1, 1, -1, 1] ])
@@ -1141,7 +1142,7 @@ class BaseAviary(gym.Env):
         force_world_frame = thrust_world_frame - np.array([0, 0, self.GRAVITY])
         z_torques = np.array(rpm**2)*self.KM
         z_torque = (-z_torques[0] + z_torques[1] - z_torques[2] + z_torques[3])
-        if self.DRONE_MODEL==DroneModel.CF2X:
+        if self.DRONE_MODEL in [DroneModel.CF2X, DroneModel.MAVIC3]:
             x_torque = (forces[0] + forces[1] - forces[2] - forces[3]) * (self.L/np.sqrt(2))
             y_torque = (- forces[0] + forces[1] + forces[2] - forces[3]) * (self.L/np.sqrt(2))
         elif self.DRONE_MODEL==DroneModel.CF2P or self.DRONE_MODEL==DroneModel.HB:
