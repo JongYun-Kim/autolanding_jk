@@ -92,18 +92,18 @@ class Workspace:
         # create logger
         self.logger = Logger(self.work_dir, use_tb=self.cfg.use_tb)
         # create envs
+        env_kwargs = self._build_env_kwargs_from_cfg(
+            getattr(self.cfg, 'curriculum_preset', None))
         if getattr(self.cfg, 'gimbal_mode', False):
-            env_kwargs = self._build_env_kwargs_from_cfg(
-                getattr(self.cfg, 'curriculum_preset', None))
             self.train_env = dmc.make_with_gimbal(self.cfg.task_name, self.cfg.frame_stack,
                                                   self.cfg.action_repeat, self.cfg.seed, env_kwargs)
             self.eval_env = dmc.make_with_gimbal(self.cfg.task_name, self.cfg.frame_stack,
                                                  self.cfg.action_repeat, self.cfg.seed, env_kwargs)
         else:
             self.train_env = dmc.make(self.cfg.task_name, self.cfg.frame_stack,
-                                      self.cfg.action_repeat, self.cfg.seed)
+                                      self.cfg.action_repeat, self.cfg.seed, env_kwargs)
             self.eval_env = dmc.make(self.cfg.task_name, self.cfg.frame_stack,
-                                     self.cfg.action_repeat, self.cfg.seed)
+                                     self.cfg.action_repeat, self.cfg.seed, env_kwargs)
 
         # Apply initial curriculum stage to both envs
         if getattr(self, "curr_enabled", False):
@@ -129,8 +129,17 @@ class Workspace:
         self.train_video_recorder = VideoRecorder(self.work_dir if self.cfg.save_train_video else None)
 
     def _build_env_kwargs_from_cfg(self, cfg):
-        # Build environment kwargs with gimbal control parameters
+        # Build environment kwargs from Hydra config
         env_kwargs = {}
+
+        # Drone model selection (e.g. "mavic3", "cf2x")
+        if hasattr(self.cfg, "drone_model") and self.cfg.drone_model is not None:
+            from gym_pybullet_drones.envs.BaseAviary import DroneModel
+            env_kwargs["drone_model"] = DroneModel(self.cfg.drone_model)
+
+        # Controller type selection (e.g. "dsl" for Mavic3)
+        if hasattr(self.cfg, "controller_type") and self.cfg.controller_type is not None:
+            env_kwargs["controller_type"] = str(self.cfg.controller_type)
 
         # Add gimbal control parameters if they exist in config
         if hasattr(self.cfg, "gimbal_control_mode"):

@@ -209,6 +209,48 @@ Test: 3 controllers x 8 maneuvers, 50 steps each, ActionType.VEL.
 - DSL XY is over-responsive due to lower aerodynamic drag at Mavic3 scale; gains intentionally reduced to prevent instability
 - No torque-out-of-range warnings with per-axis clipping
 
+## Training Pipeline Integration
+
+Drone model and controller type are configurable via Hydra config. Both `dmc.make()` (non-gimbal) and `dmc.make_with_gimbal()` (gimbal) pass environment kwargs built from the config.
+
+### Usage
+
+```bash
+# Default (CF2X, SimplePID)
+python train.py
+
+# Mavic3 with SimplePID (default controller)
+python train.py drone_model=mavic3
+
+# Mavic3 with DSL controller
+python train.py drone_model=mavic3 controller_type=dsl
+
+# Mavic3 in gimbal mode with curriculum
+python train.py --config-name=config_gimbal_curriculum drone_model=mavic3
+
+# Mavic3 in gimbal mode without curriculum
+python train.py --config-name=config_gimbal drone_model=mavic3 controller_type=dsl
+```
+
+### Config Fields
+
+All three base configs (`config.yaml`, `config_gimbal.yaml`, `config_gimbal_curriculum.yaml`) include:
+
+```yaml
+drone_model: null      # "cf2x", "mavic3", "hb", "cf2p" (null = constructor default)
+controller_type: null  # null (default) or "dsl" (Mavic3 only)
+```
+
+### Flow
+
+1. `train.py:Workspace.setup()` calls `_build_env_kwargs_from_cfg()` to extract `drone_model` and `controller_type` from config
+2. `drone_model` string is converted to `DroneModel` enum (e.g. `DroneModel("mavic3")`)
+3. `env_kwargs` dict is passed to `dmc.make()` or `dmc.make_with_gimbal()`
+4. `dmc.make()` passes kwargs to `gym.make(name, **env_config)`
+5. Aviary constructor receives `drone_model` and `controller_type`, dispatches to the appropriate PID controller
+
+---
+
 ## Tuning Guidance
 
 If the Mavic3 behaves incorrectly during training:
@@ -233,4 +275,9 @@ If the Mavic3 behaves incorrectly during training:
 ### Modified
 - `gym_pybullet_drones/envs/BaseAviary.py` - Added MAVIC3 to DroneModel enum and X-config branches
 - `gym_pybullet_drones/envs/single_agent_rl/BaseSingleAgentAviary.py` - Added `controller_type` param, DSL controller dispatch
-- `gym_pybullet_drones/envs/single_agent_rl/LandingAviary.py` - Added `controller_type` pass-through
+- `gym_pybullet_drones/envs/single_agent_rl/LandingAviary.py` - Added `controller_type` pass-through in all three aviary classes
+- `dmc.py` - Added `env_config` parameter to `make()` for passing kwargs to `gym.make()`
+- `train.py` - Build env_kwargs for both gimbal and non-gimbal paths; extract `drone_model`/`controller_type` from config
+- `cfgs/config.yaml` - Added `drone_model`, `controller_type` fields
+- `cfgs/config_gimbal.yaml` - Added `drone_model`, `controller_type` fields
+- `cfgs/config_gimbal_curriculum.yaml` - Added `drone_model`, `controller_type` fields

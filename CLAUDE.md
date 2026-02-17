@@ -23,6 +23,12 @@ python train.py seed=42 lr=3e-4 batch_size=256
 
 # Select curriculum preset
 python train.py curriculum_preset=aggressive
+
+# Train with Mavic3 drone model
+python train.py drone_model=mavic3
+
+# Train with Mavic3 using DSL controller
+python train.py drone_model=mavic3 controller_type=dsl
 ```
 
 Training outputs go to `./exp_local/<date>/<time>_<overrides>/` (configured in Hydra).
@@ -57,7 +63,7 @@ cd docker && bash build.sh
   - `LandingAviary` — Base landing task
   - `LandingGimbalAviary` — Adds gimbal control (position/velocity/acceleration modes)
   - `LandingGimbalCurriculumAviary` — Adds curriculum stage management via `CurriculumStageSpec`
-- **`control/`** — PID controllers (`DSLPIDControl`, `SimplePIDControl`).
+- **`control/`** — PID controllers (`DSLPIDControl`, `SimplePIDControl`, `Mavic3PIDControl`, `Mavic3DSLPIDControl`).
 
 ### Configuration System (`cfgs/`)
 
@@ -82,6 +88,7 @@ Stage advancement requires sustained success rate over a sliding window of episo
 
 ## Key Conventions
 
+- `drone_model` config selects the drone (`"cf2x"`, `"mavic3"`, `"hb"`, `"cf2p"`; null = constructor default CF2X). `controller_type` selects the PID controller (`null` = SimplePID, `"dsl"` = DSL-style; only meaningful for Mavic3).
 - The `gimbal_mode` config flag controls whether gimbal environments are used. Curriculum code paths are further gated by `curr_enabled`.
 - The agent `_target_` field in all configs points to `drqv2.DrQV2Agent`.
 - Old checkpoints referencing `drqv2-w-new_nets` are loaded via a `sys.modules` compatibility shim in `train.py`.

@@ -4,6 +4,8 @@ defaults:
   - override hydra/launcher: submitit_local
 
 gimbal_mode: true
+drone_model: null      # "cf2x", "mavic3", "hb", "cf2p" (null = constructor default)
+controller_type: null  # null (default) or "dsl" (Mavic3 only)
 
 # task settings
 frame_stack: 3

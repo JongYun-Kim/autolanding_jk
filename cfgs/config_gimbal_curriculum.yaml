@@ -6,6 +6,8 @@ defaults:
   - override hydra/launcher: submitit_local
 
 gimbal_mode: true
+drone_model: null      # "cf2x", "mavic3", "hb", "cf2p" (null = constructor default)
+controller_type: null  # null (default) or "dsl" (Mavic3 only)
 
 # task settings
 frame_stack: 3
@@ -53,7 +55,7 @@ agent:
   frame_stack: ${frame_stack}
   lr_schedule: ${lr_schedule}
   auxiliary_task:
-    enable: false  # Disabled by default for backward compatibility
+    enable: true  # Disabled by default for backward compatibility
     weight: 400.0  # Weight of auxiliary loss relative to critic loss
     hidden_dim: 128  # Hidden dimension of auxiliary prediction head
 

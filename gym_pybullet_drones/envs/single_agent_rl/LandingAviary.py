@@ -325,8 +325,10 @@ class LandingGimbalAviary(LandingAviary):
                  gimbal_control_mode: str="position",  # "position", "velocity", or "acceleration"
                  gimbal_max_velocity: float=3.0,  # rad/s, for velocity and acceleration modes
                  gimbal_max_acceleration: float=10.0,  # rad/s^2, for acceleration mode only
+                 controller_type=None,
                  ):
 
+        self._controller_type = controller_type
         self._cam_dir_local = np.array([0.0, 0.0, -1.0], dtype=np.float64)  # camera forward (-z)
         self._cam_up_local  = np.array([1.0, 0.0, 0.0], dtype=np.float64)   # camera up (+x)
         self._cam_offset_local = np.array([0.0, 0.0, -0.0034], dtype=np.float64)  # 아래로 약간 오프셋
@@ -390,7 +392,8 @@ class LandingGimbalAviary(LandingAviary):
                          episode_len_sec=episode_len_sec,
                          gv_path_type=gv_path_type,
                          gv_sinusoidal_amplitude=gv_sinusoidal_amplitude,
-                         gv_sinusoidal_frequency=gv_sinusoidal_frequency)
+                         gv_sinusoidal_frequency=gv_sinusoidal_frequency,
+                         controller_type=self._controller_type)
 
     def _observationSpace(self):
         if self.OBS_TYPE == ObservationType.RGB:
@@ -914,6 +917,7 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
                  gimbal_control_mode: str="position",
                  gimbal_max_velocity: float=3.0,
                  gimbal_max_acceleration: float=10.0,
+                 controller_type=None,
                  ):
         super().__init__(drone_model=drone_model,
                          initial_xyzs=initial_xyzs,
@@ -931,7 +935,8 @@ class LandingGimbalCurriculumAviary(LandingGimbalAviary):
                          gv_sinusoidal_frequency=gv_sinusoidal_frequency,
                          gimbal_control_mode=gimbal_control_mode,
                          gimbal_max_velocity=gimbal_max_velocity,
-                         gimbal_max_acceleration=gimbal_max_acceleration)
+                         gimbal_max_acceleration=gimbal_max_acceleration,
+                         controller_type=controller_type)
 
         # 커리큘럼 상태
         self.use_curriculum = use_curriculum
