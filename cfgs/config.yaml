@@ -3,6 +3,8 @@ defaults:
   - task@_global_: landing-aviary-v0
   - override hydra/launcher: submitit_local
 
+gimbal_mode: false
+
 # task settings
 frame_stack: 3
 action_repeat: 1
@@ -46,6 +48,13 @@ agent:
   feature_dim: ${feature_dim}
   stddev_schedule: ${stddev_schedule}
   stddev_clip: 0.3
+  frame_stack: ${frame_stack}
+  state_dim_per_frame: 7
+  lr_schedule: null
+  auxiliary_task:
+    enable: false
+    weight: 400.0
+    hidden_dim: 128
 
 hydra:
   run:

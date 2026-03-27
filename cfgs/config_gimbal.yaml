@@ -3,6 +3,8 @@ defaults:
   - task@_global_: landing-aviary-v0-gimbal
   - override hydra/launcher: submitit_local
 
+gimbal_mode: true
+
 # task settings
 frame_stack: 3
 action_repeat: 1
@@ -47,6 +49,11 @@ agent:
   stddev_schedule: ${stddev_schedule}
   stddev_clip: 0.42
   frame_stack: ${frame_stack}
+  lr_schedule: null
+  auxiliary_task:
+    enable: false
+    weight: 400.0
+    hidden_dim: 128
 
 hydra:
   run:

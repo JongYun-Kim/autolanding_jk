@@ -211,13 +211,6 @@ class FrameStackWrapperWithGimbalState(FrameStackWrapper):
         return self._transform_observation(time_step)
 
 
-class FrameStackWrapperWithGimbalOracle(FrameStackWrapperWithGimbalState):
-    def __init__(self, env, num_frames, pixels_key='pixels'):
-        super().__init__(env, num_frames, pixels_key)
-
-    def action_spec(self):
-        return BoundedArray((3,), np.float32, minimum = -1, maximum = 1, name = 'action')
-
 class ExtendedTimeStepWrapper(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -271,58 +264,6 @@ class ExtendedTimeStepWrapper(gym.Wrapper):
                                 oracle_gimbal = oracle_gimbal)#time_step.discount or 1.0)
 
 
-class MultiRewardExtendedTimeStepWrapper(gym.Wrapper):
-    def __init__(self, env):
-        super().__init__(env)
-
-    def reset(self):
-        time_step = self.env.reset()
-        return self._augment_time_step(time_step, step_type = StepType.FIRST)
-
-    def step(self, action):
-        time_step = self.env.step(action)
-        if time_step[2] == True:
-            step_type = StepType.LAST
-        else:
-            step_type = StepType.MID
-        return self._augment_time_step(time_step, action, step_type= step_type)
-
-    def _augment_time_step(self, time_step, action=None, step_type = None):
-        if  step_type == StepType.FIRST:
-            discount = 1.0
-            landing_info = False
-            position_error = [0.0, 0.0]
-            oracle_gimbal = np.zeros((2,), dtype=np.float32)  # Zeros for first step
-        elif time_step[3]["episode end flag"] == True:
-            discount = 0.0
-            landing_info = time_step[3]["landing"]
-            position_error = [time_step[3]['x error'], time_step[3]['y error']]
-            oracle_gimbal = time_step[3].get('oracle_gimbal', np.zeros((2,), dtype=np.float32))
-        else:
-            discount = 1.0
-            landing_info = time_step[3]["landing"]
-            position_error = [time_step[3]['x error'], time_step[3]['y error']]
-            oracle_gimbal = time_step[3].get('oracle_gimbal', np.zeros((2,), dtype=np.float32))
-
-        if action is None:
-            action_spec = self.action_spec()
-            action = np.zeros(action_spec.shape, dtype=action_spec.dtype)
-        if step_type == StepType.FIRST:
-            reward = np.zeros((3,), dtype=np.float32)
-        else:
-            reward = time_step[1]
-
-        return ExtendedTimeStep(observation=time_step[0],
-                                step_type=step_type,
-                                action=action,
-                                reward= reward,
-                                discount=discount,
-                                landing_info = landing_info,
-                                drone_state = time_step[-1],
-                                position_error = position_error,
-                                oracle_gimbal = oracle_gimbal)
-
-
 def make(name, frame_stack, action_repeat, seed):
     env = gym.make(name) 
     env = FrameStackWrapper(env, frame_stack)
@@ -337,20 +278,3 @@ def make_with_gimbal(name, frame_stack, action_repeat, seed, env_config=None):
     env = ExtendedTimeStepWrapper(env)
     return env
 
-def make_with_gimbal_oracle(name, frame_stack, action_repeat, seed, env_config=None):
-    env = gym.make(name, **env_config) if env_config is not None else gym.make(name)
-    env = FrameStackWrapperWithGimbalOracle(env, frame_stack)
-    env = ExtendedTimeStepWrapper(env)
-    return env
-
-def make_toddler_train(name, frame_stack, action_repeat, seed):
-    env = gym.make(name)
-    env = FrameStackWrapper(env, frame_stack)
-    env = ExtendedTimeStepWrapper(env)
-    return env
-
-def make_reflective_train(name, frame_stack, action_repeat, seed):
-    env = gym.make(name)
-    env = FrameStackWrapper(env, frame_stack)
-    env = MultiRewardExtendedTimeStepWrapper(env)
-    return env
